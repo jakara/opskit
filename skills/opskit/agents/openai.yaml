@@ -1,4 +1,4 @@
 interface:
-  display_name: "OpsKit 气隙交付"
-  short_description: "在业务仓库生成离线交付包，附带 OpsKit、中文向导和可预览文档"
-  default_prompt: "使用 $opskit 将当前业务仓库制作为可在客户龙蜥环境离线安装和维护的完整交付包，并将指定资料及生成手册接入 Hub 文档中心。"
+  display_name: "OpsKit 打包与交付"
+  short_description: "先选择直出 OpsKit 或完整气隙交付，保留中文向导与管理端、采集端"
+  default_prompt: "使用 $opskit，先让我选择仅直出 OpsKit，还是为当前业务仓库制作完整气隙交付包。"

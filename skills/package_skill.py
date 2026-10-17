@@ -80,7 +80,7 @@ def stage(destination):
          'sha256': {key: value for key, value in hashes.items() if key not in documentation},
          'documentation_sha256': documentation},
         ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    for relative in ('SKILL.md', 'scripts/build_bundle.py', 'scripts/collect_prerequisites.py',
+    for relative in ('SKILL.md', 'scripts/build_bundle.py', 'scripts/export_opskit.py', 'scripts/collect_prerequisites.py',
                      'assets/site/site.py', 'assets/site/install.sh', 'assets/site/offline-bootstrap.sh'):
         if not (destination / relative).is_file():
             raise ValueError(f'Skill 资源缺失：{relative}')

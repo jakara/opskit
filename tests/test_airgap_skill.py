@@ -1,10 +1,12 @@
 """分发包独立性和基础安装器镜像默认值的实际集成检查。"""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -54,6 +56,18 @@ class SkillDistributionTests(unittest.TestCase):
                                      '--repo', str(stage / 'assets/example')], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('deploy/compose.yaml', json.loads(result.stdout)['compose_files'])
+            output = Path(directory) / 'direct'
+            exported = subprocess.run([sys.executable, '-B', str(stage / 'scripts/export_opskit.py'),
+                                       '--output', str(output)], capture_output=True, text=True,
+                                      env={**os.environ, 'PATH': str(Path(directory) / 'no-tools')})
+            self.assertEqual(exported.returncode, 0, exported.stderr)
+            with tarfile.open(output / 'opskit-direct.tar.gz') as archive:
+                files = {member.name.removeprefix('opskit/'): archive.extractfile(member).read()
+                         for member in archive.getmembers() if member.isfile()}
+                self.assertEqual(archive.getmember('opskit/install.sh').mode, 0o755)
+            files.pop('SHA256SUMS')
+            self.assertEqual(files, {p.relative_to(runtime).as_posix(): p.read_bytes()
+                                     for p in runtime.rglob('*') if p.is_file()})
             self.assertFalse(any(p.name == '.env' or '__pycache__' in p.parts for p in stage.rglob('*')))
             with patch.object(sys, 'dont_write_bytecode', True):
                 builder = module('detached_airgap_builder', stage / 'scripts/build_bundle.py')

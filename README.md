@@ -6,7 +6,7 @@ Hub 是统一的应用入口工作台，在本机和服务器上都能发现本�
 | --- | --- | --- |
 | [管理中心](management/README.md) | 一台管理机 | 统一工作台、Nginx Proxy Manager、Spug、MariaDB、DBX、VictoriaLogs |
 | [日志采集端](collector/README.md) | 每台业务机 | Fluent Bit，独立配置、安装及离线镜像 |
-| [气隙制包 Skill](skills/README.md) | 联网开发环境中的业务仓库 | 业务适配、目标依赖与镜像、现场向导、Spug 操作手册及正式封包 |
+| [打包与交付 Skill](skills/README.md) | 联网开发环境 | 直出 OpsKit，或完成业务适配、目标依赖与镜像、现场向导及气隙封包 |
 
 管理中心只提供 HTTP，由已有的外层 Nginx 处理 HTTPS。不需要在本包中配置、申请或分发证书。Nginx Proxy Manager 提供代理配置 WebUI。
 
@@ -17,6 +17,8 @@ Hub 是统一的应用入口工作台，在本机和服务器上都能发现本�
 ```text
 安装这个 Skill：https://raw.githubusercontent.com/jakara/opskit/main/skill.md
 ```
+
+调用时未明确模式，Skill 会先询问“是否直出 OpsKit？”。选择直出只打包 OpsKit 管理端、采集端、安装入口和内置说明，不包含业务应用、镜像或离线系统依赖；选择完整气隙包则按下文完成业务适配与验收。直出不需要业务仓库或 Docker，安装时仍需准备依赖和镜像。
 
 也可将 `opskit.skill` 解压后，把完整 `opskit/` 放入 AI 助手的技能目录。在要交付的业务代码仓库中调用（Claude Code 对应 `/opskit`）：
 
