@@ -33,7 +33,7 @@ async function load() {
   $('refresh').disabled = true;
   try {
     state = await api();
-    document.title = '应用工作台 · OpsKit Hub';
+    if (!location.pathname.startsWith('/hub/docs')) document.title = '应用工作台 · OpsKit Hub';
     $('title').textContent = '应用工作台';
     $('intro').textContent = '本机 Docker、HTTP 服务与常用入口，一处查找。';
     $('discovery-label').textContent = '本机服务发现';

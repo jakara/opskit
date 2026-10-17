@@ -2,18 +2,25 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>OpsKit 工作台</title><link rel="stylesheet" href="/hub/style.css"><script src="/hub/app.js" defer></script>
+  <title>OpsKit 工作台</title><link rel="stylesheet" href="/hub/style.css"><script src="/hub/vendor/marked-18.1.1.umd.js" defer></script><script src="/hub/vendor/purify-3.4.17.min.js" defer></script><script src="/hub/vendor/mammoth-1.13.0.browser.min.js" defer></script><script src="/hub/app.js" defer></script><script src="/hub/documents.js" defer></script>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="/" aria-label="OpsKit 工作台"><span class="mark">O</span> OpsKit<span class="brand-note">应用与运维</span></a><span id="discovery-label" class="mode">正在连接</span></header>
   <main>
-    <section class="heading"><div><div class="eyebrow">你的应用，随时可达</div><h1 id="title">工作台</h1><p id="intro">正在读取应用入口…</p></div><div class="heading-actions"><button id="refresh" class="secondary">刷新</button><button id="add" class="primary">＋ 添加入口</button></div></section>
+    <div id="home-view">
+    <section class="heading"><div><div class="eyebrow">你的应用，随时可达</div><h1 id="title">工作台</h1><p id="intro">正在读取应用入口…</p></div><div class="heading-actions"><a class="secondary docs-link" href="/hub/docs">交付文档</a><button id="refresh" class="secondary">刷新</button><button id="add" class="primary">＋ 添加入口</button></div></section>
     <div id="notice" class="notice" role="status" hidden></div><section id="stats" class="stats" aria-label="工作台概览"></section>
     <div class="toolbar"><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索应用、项目或端口" aria-label="搜索应用、项目或端口"></label><span id="updated" class="muted"></span></div>
     <section id="builtin-section" class="section builtin-section" hidden><div class="section-heading"><div><h2>OpsKit 运维工具 <span id="builtin-count" class="count">0</span></h2><p>内置入口固定置顶，优先访问主机、数据库、日志和代理工具</p></div><span class="pinned-label">置顶</span></div><div id="builtin-entries" class="entries"></div></section>
+    <section class="section documents-summary"><div class="section-heading"><div><h2>交付文档 <span id="documents-count" class="count">0</span></h2><p>现场安装、Spug 操作与项目资料，离线即可查阅</p></div><a class="open-link docs-link" href="/hub/docs">查看全部文档 →</a></div><div id="document-shortcuts" class="document-shortcuts"><span class="muted">正在读取交付文档…</span></div></section>
     <section class="section"><div class="section-heading"><div><h2>应用入口 <span id="entry-count" class="count">0</span></h2><p>把常用系统与管理工具放在这里</p></div></div><div id="entries" class="entries"></div></section>
     <section id="docker-section" class="section"><div class="section-heading"><div><h2>Docker 应用与端口</h2><p>按 Compose 项目归类，已识别的 Web 端口可直接打开</p></div><label class="toggle"><input id="running" type="checkbox" checked> 仅显示运行中</label></div><div id="containers"></div></section>
     <section class="section"><div class="section-heading"><div><h2>其他 HTTP 服务 <span id="http-count" class="count">0</span></h2><p>从本机监听端口识别，容器发布端口不重复显示；不跟随重定向</p></div></div><div id="http-services" class="entries"></div></section>
+    </div>
+    <section id="documents-view" hidden aria-label="交付文档阅读器">
+      <div class="heading"><div><div class="eyebrow">现场资料，随手可查</div><h1>交付文档</h1><p>交付手册、项目文档与内置说明，原文件也保留在 documents 目录中。</p></div><div class="heading-actions"><a href="/" class="secondary docs-link">← 返回工作台</a><button id="documents-refresh" class="secondary">刷新文档</button></div></div>
+      <div class="documents-layout"><aside class="documents-sidebar"><label class="search"><span aria-hidden="true">⌕</span><input id="documents-search" type="search" placeholder="搜索文档名称或路径" aria-label="搜索文档"></label><p id="documents-total" class="muted"></p><nav id="document-list" aria-label="文档目录"></nav></aside><div class="document-panel"><div class="document-heading"><div><h2 id="document-title">选择一份文档</h2><p id="document-path"></p></div><a id="document-download" class="secondary" hidden>下载原文件</a></div><div id="document-content" class="document-content" aria-live="polite"><div class="empty">从左侧目录选择要查看的文档。</div></div></div></div>
+    </section>
     <footer><span id="footer-version">OpsKit</span><span>入口配置自动备份 · 各系统保留自己的登录</span></footer>
   </main>
   <dialog id="editor"><form id="entry-form"><div class="dialog-heading"><div><span class="eyebrow">应用入口</span><h2 id="dialog-title">添加入口</h2></div><button type="button" id="close" class="icon-button" aria-label="关闭">×</button></div><input id="entry-id" type="hidden"><label>入口名称<input id="entry-name" required maxlength="100" placeholder="例如：心理健康系统"></label><label>分组<input id="entry-group" required maxlength="100" list="group-options" placeholder="例如：业务系统、运维工具"><datalist id="group-options"></datalist></label><label>访问地址<input id="entry-url" required maxlength="2048" placeholder="https://example.com 或 /dbx/"></label><label>说明<textarea id="entry-description" maxlength="300" rows="2" placeholder="用途、访问方式或需要注意的事项"></textarea></label><p id="form-error" class="form-error" role="alert"></p><div class="dialog-actions"><button id="cancel" type="button" class="secondary">取消</button><button id="save" class="primary" type="submit">保存入口</button></div></form></dialog>

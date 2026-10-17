@@ -13,7 +13,9 @@ import time
 from urllib.error import HTTPError
 from urllib.request import Request, build_opener, ProxyHandler
 
-from common import ROOT, ask, docker_ready, env_text, host, load_env, password, port, run, save
+from common import ROOT, ask, docker_ready, env_text, host, image_defaults, load_env, password, port, run, save
+
+IMAGES = image_defaults({'FLUENTBIT_IMAGE': 'fluent/fluent-bit:5.1.4'})
 
 
 def identifier(value):
@@ -70,9 +72,9 @@ def configure(existing, reconfigure=False):
         v['LOG_FILE_PATTERN'] = ask('该目录中的日志文件匹配规则', v.get('LOG_FILE_PATTERN', '*.log'), pattern)
         if not password(v.get('LOG_AGENT_PASSWORD', '')) or v.get('LOG_AGENT_PASSWORD', '').startswith('REPLACE_'):
             v['LOG_AGENT_PASSWORD'] = ask('管理端发放的日志写入密码', '', password, secret=True)
-        v['FLUENTBIT_IMAGE'] = ask('Fluent Bit 镜像地址（可填私有仓库）', v.get('FLUENTBIT_IMAGE', 'fluent/fluent-bit:5.1.4'),
+        v['FLUENTBIT_IMAGE'] = ask('Fluent Bit 镜像地址（可填私有仓库）', v.get('FLUENTBIT_IMAGE', IMAGES['FLUENTBIT_IMAGE']),
                                   lambda s: bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@-]+', s)))
-    v.setdefault('FLUENTBIT_IMAGE', 'fluent/fluent-bit:5.1.4')
+    v.setdefault('FLUENTBIT_IMAGE', IMAGES['FLUENTBIT_IMAGE'])
     validate(v)
     return v
 

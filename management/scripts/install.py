@@ -11,16 +11,16 @@ import socket
 import subprocess
 import sys
 
-from common import ROOT, ask, docker_ready, env_text, host, ipv4, load_env, password, port, powershell, run, save
+from common import ROOT, ask, docker_ready, env_text, host, image_defaults, ipv4, load_env, password, port, powershell, run, save
 
-IMAGES = {
+IMAGES = image_defaults({
     'WORKBENCH_IMAGE': 'python:3.12-alpine',
     'NPM_IMAGE': 'jc21/nginx-proxy-manager:2.16.0',
     'SPUG_IMAGE': 'openspug/spug:4.1',
     'MARIADB_IMAGE': 'mariadb:10.11',
     'DBX_IMAGE': 't8y2/dbx:0.6.40',
     'VICTORIALOGS_IMAGE': 'victoriametrics/victoria-logs:v1.53.0',
-}
+})
 PASSWORD_KEYS = ('NPM_ADMIN_PASSWORD', 'SPUG_ADMIN_PASSWORD', 'SPUG_DB_PASSWORD',
                  'DBX_PASSWORD', 'OPS_ADMIN_PASSWORD', 'LOG_AGENT_PASSWORD')
 

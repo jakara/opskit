@@ -7,6 +7,9 @@
 **/__pycache__/
 **/.workbench/
 **/.uninstall-backups/
+**/.document-backups/
+management/documents/*
+!management/documents/README.md
 management/outer-nginx.conf.example
 *.tgz
 *.tar

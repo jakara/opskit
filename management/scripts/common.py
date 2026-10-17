@@ -2,6 +2,7 @@
 import hashlib
 import base64
 import ipaddress
+import json
 import os
 from pathlib import Path
 import re
@@ -13,6 +14,20 @@ import tempfile
 from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def image_defaults(defaults):
+    """发行包可锁定离线镜像别名，不从交付配置引入其他安装参数。"""
+    path = ROOT / 'image-defaults.json'
+    if not path.exists():
+        return defaults
+    values = json.loads(path.read_text(encoding='utf-8-sig'))
+    if not isinstance(values, dict) or set(values) - set(defaults):
+        raise ValueError('image-defaults.json 包含未知镜像配置')
+    if any(not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@-]+', value)
+           for value in values.values()):
+        raise ValueError('image-defaults.json 包含无效镜像引用')
+    return dict(defaults, **values)
 
 
 def load_env(path):

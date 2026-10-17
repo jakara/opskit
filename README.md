@@ -1,4 +1,4 @@
-# OpsKit 企业软件运维工具包 v0.7.0
+# OpsKit 企业软件运维工具包 v0.9.0
 
 Hub 是统一的应用入口工作台，在本机和服务器上都能发现本机 Docker 容器、已发布端口及 HTTP/HTTPS 服务，并支持收藏与搜索。管理中心还组合主机运维、数据库查询和集中日志，适合约 3～5 台业务虚拟机；日志采集端独立安装。
 
@@ -6,8 +6,39 @@ Hub 是统一的应用入口工作台，在本机和服务器上都能发现本�
 | --- | --- | --- |
 | [管理中心](management/README.md) | 一台管理机 | 统一工作台、Nginx Proxy Manager、Spug、MariaDB、DBX、VictoriaLogs |
 | [日志采集端](collector/README.md) | 每台业务机 | Fluent Bit，独立配置、安装及离线镜像 |
+| [气隙制包 Skill](skills/README.md) | 联网开发环境中的业务仓库 | 业务适配、目标依赖与镜像、现场向导、Spug 操作手册及正式封包 |
 
 管理中心只提供 HTTP，由已有的外层 Nginx 处理 HTTPS。不需要在本包中配置、申请或分发证书。Nginx Proxy Manager 提供代理配置 WebUI。
+
+## 将业务系统制成现场气隙包
+
+把下面一行发送给 Claude Code 或 Codex，即可按[安装说明](skill.md)安装完整 Skill：
+
+```text
+安装这个 Skill：https://raw.githubusercontent.com/jakara/opskit/main/skill.md
+```
+
+也可将 `opskit.skill` 解压后，把完整 `opskit/` 放入 AI 助手的技能目录。在要交付的业务代码仓库中调用（Claude Code 对应 `/opskit`）：
+
+```text
+使用 $opskit，为当前仓库生成现场离线交付包。
+目标龙蜥 8.9 x86_64，业务版本 1.2.0。
+按现有部署方式划分主机角色，完成断网验收后生成正式包。
+```
+
+Skill 会把业务仓库适配、镜像固定、系统依赖收集和业务备份/验收脚本编制留在公司制包阶段。最终压缩包包含业务应用、OpsKit 管理端、采集端、离线 RPM、中文现场参数向导和逐角色 Spug 操作手册；驻场工程师解压后执行包内 `install.sh`，按主机角色填表即可安装。已有参数会保留，升级先备份，有状态数据的恢复按应用适配的策略执行。
+
+开发者可在 `opskit-delivery.json` 中用 `documents` 指定交付资料，支持选择文件或目录：
+
+```json
+{
+  "documents": ["README.md", "docs/部署说明.md", "docs/现场交接.docx", "docs/附件"]
+}
+```
+
+Hub 首页提供“交付文档”入口，按交付手册、项目文档和内置说明分组，支持搜索、预览及原件下载。Markdown、文本、PDF、Word `.docx` 和图片均在本地预览，不需要外网；Word 内容预览支持正文、表格和内嵌图片，复杂排版以原件为准。旧 `.doc` 需先转 `.docx` 或 PDF。生成手册和所选资料以普通文件存放在 `opskit/management/documents/`，也可用 vim 查看。缺失、越界或不支持的文档会在制包阶段报错。
+
+当前现场目标为龙蜥 8.9 / 8.10 的 amd64 / arm64；制包端支持具备 Python、Docker/Compose/Buildx 的 Linux、macOS 和 Windows。每个具体交付包都要按目标验收；缺镜像、依赖或完整验收时只生成待验收目录，不能封成正式包。Spug 手册提供可复制字段与发布命令，不会自动在客户 Spug 中注册应用。安装方式、契约和演练仓库见 [Skill 模块说明](skills/README.md)。
 
 ## 按需安装，同一个 Hub
 
@@ -89,11 +120,15 @@ management/                可独立复制的管理中心
   hub.compose.yaml         单独安装 Hub 与 NPM，共用服务定义
   scripts/                 检查、备份、镜像导出、代理初始化
   portal/                  统一 Hub、只读宿主机发现服务
+  documents/               随包文档库，Hub 只读预览
   ai/README.md             AI 扩展约定（尚未实现 AI 服务）
 collector/                 可独立复制的日志采集模块
   install.sh / install.cmd  采集端安装向导
   compose.yaml             Fluent Bit 服务
   fluent-bit.conf          日志采集规则
+skills/                    气隙交付 Skill 与分发打包器
+  opskit/            工作流、制包工具、现场运行时、契约与独立演练仓库
+  package_skill.py          生成包含当前 OpsKit 源码快照的自包含 Skill
   scripts/                 检查与镜像导出
 ```
 
@@ -178,5 +213,11 @@ v0.6 增加 Linux/macOS 自动依赖引导及原生 Windows CMD/PowerShell 安�
 这不代表龙蜥实机的 Docker 服务或重启自启已经验收，也不代表原生 Windows、Windows PowerShell 5.1、NTFS ACL、UAC、WSL 和 Docker Desktop 的实际安装已经验收。Windows 分支的当前证据是语法解析与模拟流程测试。
 
 目标环境仍需验证外层 HTTPS、真实 SSH 纳管、数据库查询，以及每台业务机追加日志后的跨主机检索。容器启动或模拟后端测试不代表已完成这些验收。
+
+v0.8 增加自包含的 `opskit-airgap` Skill。独立分发快照已在另一个演练仓库完成真实镜像导出、完整暂存和缺项验收拒绝封包；龙蜥官方 8.9 ARM64 干净容器中完成 194 个签名 RPM 的禁网安装，原系统 Python 保留。现场 bootstrap 的仅 Python、全依赖安装及检查入口均实测，无 daemon/systemd 时准确停止。业务运行时由 macOS 控制器在独立 Linux ARM64 Docker 项目中完成安装、检查、升级、回退及 HTTP 版本核对，测试后其他容器未变。
+
+上述业务组件验证未执行完整龙蜥 VM 的现场入口，也不是全套 OpsKit 的断网安装验收。原生 Windows 制包、其他龙蜥版本/CPU 组合、真实业务数据恢复及客户 Spug 发布仍须随具体项目验收；不以通用演练报告替代客户应用的验收记录。
+
+v0.9 将 Skill 分发名统一为 `opskit.skill`，调用名为 `$opskit`。开发者指定的项目资料、自动生成的现场/Spug 手册及内置说明可在 Hub 离线搜索、预览和下载。已在真实浏览器验证 Markdown 相对链接与图片、Word `.docx` 标题/表格/内嵌图片、PDF 中文分页及原件下载；文档接口和原 Hub 功能的 19 项回归通过。Word 提供内容预览，复杂版式以原件为准；旧 `.doc` 制包前需转为 `.docx` 或 PDF。
 
 本包仍使用应用自身账户和共享入口鉴权，没有实现统一 SSO 或逐人审计；AI 诊断目前只有扩展约定。各上游组件保留其原有开源许可，本工具包提供部署配置与安装脚本。

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "application": {"id": "airgap-example", "name": "气隙交付演练", "version": "1.0.0"},
+  "target": {"os": "anolis", "version": "8.9", "arch": "arm64"},
+  "documents": ["README.md", "docs"],
+  "roles": [{
+    "id": "web", "name": "演练网站", "project_name": "opskit-airgap-example-web",
+    "compose": "deploy/compose.yaml",
+    "files": [{"source": "deploy/server.py", "target": "server.py"}],
+    "parameters": [
+      {"key": "HTTP_PORT", "label": "本机演练 HTTP 端口", "type": "port", "default": "19070", "required": true},
+      {"key": "APP_VERSION", "label": "页面显示的演练版本", "type": "text", "default": "1.0.0", "required": true}
+    ],
+    "checks": [],
+    "hooks": {"check": "deploy/check.sh"},
+    "site_notes": ["演练服务无数据库和持久业务数据，可单独安装。", "安装后在目标主机访问 http://127.0.0.1:所填端口/，应显示 ok=true 与所填演练版本。"],
+    "stateful": false,
+    "rollback": "app-only"
+  }]
+}
