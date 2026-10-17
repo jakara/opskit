@@ -1,4 +1,4 @@
 interface:
   display_name: "OpsKit 打包与交付"
-  short_description: "先选择直出 OpsKit 或完整气隙交付，保留中文向导与管理端、采集端"
-  default_prompt: "使用 $opskit，先让我选择仅直出 OpsKit，还是为当前业务仓库制作完整气隙交付包。"
+  short_description: "运维工具可选联网安装或按平台气隙打包，也支持业务系统完整离线交付"
+  default_prompt: "使用 $opskit，为我准备交付包，先确认是否包含业务应用，以及资源在制包时还是安装时获取。"

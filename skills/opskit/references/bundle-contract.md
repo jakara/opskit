@@ -66,6 +66,8 @@ stateful=true 时必须提供 backup hook；rollback=restore-hook 必须提供 r
 
 manifest 必须包含 schema_version=1、application、target、roles、images、opskit_path="opskit"、prerequisites="prerequisites/manifest.json"、verification。role.compose、role.hooks 全为包内相对路径，role.directory="application/<id>"；保留参数、检查、状态和回退策略。镜像记录为：
 
+`kind` 为 `application`（旧配置缺省值）或 `opskit`。业务包必须至少含一个业务角色；运维工具独立气隙包必须为 `kind="opskit"`、`roles=[]`，不创建占位业务服务，由 `build-opskit` 生成配置并复用同一制包管道。后者仍必须包含七个内置运维镜像及完整 `opskit_roles`，验收报告的业务 `roles=[]` 不会免除管理端、采集端和依赖的真实断网验收。
+
 ```json
 {"reference":"opskit/college-app-web-web:1.0.0-<短ID>","source_reference":"原镜像引用","image_id":"sha256:<源引擎ID>","config_digest":"sha256:<归档配置摘要>","rootfs_diff_ids":["sha256:<层摘要>"],"platform":"linux/amd64","archive":"images/<ID>.tar","sha256":"<归档SHA256>"}
 ```

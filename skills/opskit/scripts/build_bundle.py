@@ -301,6 +301,13 @@ def inspect_repo(repo):
 def validate_config(config):
     if config.get('schema_version') != 1:
         raise BundleError('制包配置 schema_version 必须为 1')
+    kind = config.get('kind', 'application')
+    if kind not in ('application', 'opskit'):
+        raise BundleError('kind 仅支持 application 或 opskit')
+    overrides = config.get('opskit_images', {})
+    if (not isinstance(overrides, dict) or set(overrides) - set(IMAGE_KEYS['management'] + IMAGE_KEYS['collector']) or
+            any(not isinstance(ref, str) or not ref or '$' in ref or any(c.isspace() for c in ref) for ref in overrides.values())):
+        raise BundleError('opskit_images 只允许 7 个已知镜像变量和显式镜像引用')
     documents = config.get('documents', [])
     if not isinstance(documents, list) or any(not isinstance(value, str) for value in documents):
         raise BundleError('documents 必须为仓库相对文件/目录路径的字符串数组')
@@ -317,8 +324,10 @@ def validate_config(config):
         raise BundleError('目标仅支持 Anolis 8.9 / 8.10，amd64 / arm64')
     if set(target) != {'os', 'version', 'arch'}:
         raise BundleError('target 仅允许 os、version、arch')
-    if not isinstance(roles, list) or not roles:
+    if not isinstance(roles, list) or kind == 'application' and not roles:
         raise BundleError('至少需要一个业务角色')
+    if kind == 'opskit' and roles:
+        raise BundleError('OpsKit 本体气隙包的 roles 必须为空，不包含业务角色')
     ids, projects = set(), set()
     for role in roles:
         if set(role) - {'id', 'name', 'project_name', 'compose', 'images', 'files', 'parameters', 'checks', 'stateful', 'rollback', 'hooks', 'site_notes'}:
@@ -709,13 +718,15 @@ def verify_checksums(directory):
 
 def write_documents(bundle, manifest):
     app, target, roles = manifest['application'], manifest['target'], manifest['roles']
+    opskit_only = manifest.get('kind', 'application') == 'opskit'
     dirname = bundle.name
     archive = dirname + '.tar.gz'
     base = '/opt/opskit-apps/' + app['id']
     size_mib = max(1, (sum(p.stat().st_size for p in bundle.rglob('*') if p.is_file()) + 1048575) // 1048576)
     recommended_mib = max(2048, size_mib * 3)
     lines = ['# %s %s 现场操作\n' % (app['name'], app['version']),
-             '目标：龙蜥 %s，%s。先确认每台服务器分配的角色。暂存目录尚未通过断网验收时不能交付。\n' % (target['version'], target['arch']),
+             '目标：龙蜥 %s，%s。%s暂存目录尚未通过断网验收时不能交付。\n' % (target['version'], target['arch'],
+                 '本包只安装 OpsKit 管理中心、精简管理端及日志采集端，不包含业务应用。' if opskit_only else '先确认每台服务器分配的角色。'),
              '## 复制、校验与解压\n',
              '将正式 `%s` 和同名 `.sha256` 文件通过客户批准的通道复制到各目标主机 `/opt/opskit-deliveries/`。下面命令由有 sudo 权限的运维账户执行：' % archive,
              '```bash', 'cd /opt/opskit-deliveries', 'sha256sum -c %s.sha256' % archive,
@@ -726,12 +737,14 @@ def write_documents(bundle, manifest):
              '| 主机职责 | 选择的角色 | 安装范围 | 现场主机 |', '|---|---|---|---|',
              '| 管理机 | management | 一台；完整 Hub/NPM/Spug/DBX/日志中心 | 现场填写 IP |',
              *['| %s | %s | 仅承担本业务角色的主机 | 现场填写 IP |' % (role.get('name', role['id']), role['id']) for role in roles],
-             '| 业务日志采集 | collector | 每台需要采集日志的业务机 | 与上述业务主机对应 |',
+             '| 日志采集 | collector | 每台需要采集日志的主机 | 按现场采集范围填写 IP |',
              '| 仅需入口工作台 | hub | 可选；同一目录不要与完整 management 重复安装 | 按方案填写 |\n',
-             '建议顺序：管理中心 → 数据库/业务依赖 → 业务服务 → 日志采集器。业务角色的具体先后和客户专有步骤见下方逐角色说明。只在承担对应角色的服务器执行命令，不把每个角色都装在每台机器上。',
+             ('建议顺序：管理中心 → 需要采集日志的主机上的采集器。已有业务系统继续按其自身部署方式管理；本包不安装或升级业务服务。精简管理端只含 Hub/NPM，与完整管理中心二选一。' if opskit_only else
+              '建议顺序：管理中心 → 数据库/业务依赖 → 业务服务 → 日志采集器。业务角色的具体先后和客户专有步骤见下方逐角色说明。只在承担对应角色的服务器执行命令，不把每个角色都装在每台机器上。'),
              '管理中心（仅管理机）：', '```bash', 'sudo bash install.sh --role management --action install', '```',
              '按中文向导填写内网地址、监听地址和访问账户；首次配置管理中心仍使用现有 OpsKit 向导。记录它显示的 Hub、Spug、DBX、日志入口，以及采集端所需信息。Hub 占用 80 端口，外层代理按现场方案接入。',
-             '完成该机业务角色后，再安装日志采集器（每台需要采集日志的业务机）：', '```bash', 'sudo bash install.sh --role collector --action install', '```',
+             ('管理中心安装并检查成功后，在每台需要采集日志的主机安装采集器：' if opskit_only else '完成该机业务角色后，再安装日志采集器（每台需要采集日志的业务机）：'),
+             '```bash', 'sudo bash install.sh --role collector --action install', '```',
              '采集器向导填写本机业务日志目录、管理中心内网地址和专用日志写入账户；不要使用运维登录账户。',
              '需要减少重复填写时，从管理机 `%s/management/opskit/management/collector.env` 通过受控通道复制连接配置到业务机 `/opt/opskit-collector-connection.env`；该文件含日志写入凭据，不能放进发行包。首次采集安装可执行：' % base,
              '```bash', 'sudo bash install.sh --role collector --action install --env-file /opt/opskit-collector-connection.env', '```',
@@ -743,18 +756,28 @@ def write_documents(bundle, manifest):
              '上述两个命令分别在对应主机执行；结果都应显示“完成”，result.json 的 passed/checks_passed=true。采集检查还需实际追加一条业务日志，到管理端按 project/host/app/env 标签检索确认，单看容器运行不算日志链路通过。',
              '管理状态和操作日志：`%s/management/result.json`、`%s/management/logs/`；管理配置：`%s/management/opskit/management/.env`。' % (base, base, base),
              '采集状态和操作日志：`%s/collector/result.json`、`%s/collector/logs/`；采集配置：`%s/collector/opskit/collector/.env`。配置包含凭据，只能受控交接。' % (base, base, base),
-             'OpsKit 向导和业务入口均禁止联网拉取镜像或现场构建。基础依赖缺失时自动使用包内已验收 RPM，系统 Python 不替换。系统版本、CPU 或校验不匹配时停止，索取对应发行包。\n',
+             '本气隙包安装禁止联网拉取镜像或现场构建。基础依赖缺失时自动使用包内已验收 RPM，系统 Python 不替换。系统版本、CPU 或校验不匹配时停止，索取对应发行包。\n',
              '## 出错时先停止\n',
              '校验、备份、镜像导入、启动或业务检查任一步失败，都停止后续主机。不要删除数据卷、不要绕过检查，也不要把失败当作已自动回退。保留终端错误、result.json 和本次日志，交给开发人员决定重试或回退。\n']
     spug = ['# Spug 自定义发布操作\n',
-            '本文是预置的逐字段配置说明，尚未自动注册 Spug 应用或发布配置。首次安装由工程师在终端按《现场操作》完成中文向导；Spug 流程用于已有安装的后续升级。',
+            ('本包不包含业务应用，也未自动注册 Spug 应用或发布配置。先按《现场操作》安装管理中心，在向导给出的 Spug 地址登录；Spug 自身管理员与主机 SSH 账户分别管理。' if opskit_only else
+             '本文是预置的逐字段配置说明，尚未自动注册 Spug 应用或发布配置。首次安装由工程师在终端按《现场操作》完成中文向导；Spug 流程用于已有安装的后续升级。'),
             '目标主机必须已通过 SSH 纳管。默认下述命令使用 root 运维账户；其他 SSH 账户应由管理员限定入口路径和必要 sudo 权限，并将 `bash install.sh` 改为 `sudo -n bash install.sh`。不要授予任意整机免密命令权限。\n',
-            '先按管理向导给出的 Spug 地址登录，在主机管理中为每台目标机填写现场 IP、SSH 端口与被授权账户，测试连接成功；再建立应用和客户现场环境。主机承担的角色必须与《现场操作》表对应；SSH 连接未通过或角色首次安装未成功时停止发布。Spug 自身管理员与主机 SSH 账户是不同配置。\n',
+            ('在主机管理中逐台填写现场 IP、SSH 端口与被授权账户，并测试连接。可使用主机终端、批量执行及已审批的任务开展运维；业务发布需要另行使用适配该业务的气隙包及其发布手册，不在此通用包中虚构升级或回退命令。' if opskit_only else
+             '先按管理向导给出的 Spug 地址登录，在主机管理中为每台目标机填写现场 IP、SSH 端口与被授权账户，测试连接成功；再建立应用和客户现场环境。主机承担的角色必须与《现场操作》表对应；SSH 连接未通过或角色首次安装未成功时停止发布。Spug 自身管理员与主机 SSH 账户是不同配置。\n'),
             '## 先分发、校验，再申请发布\n',
             '离线镜像包较大。通过客户批准的文件通道预先复制完整包与 `.sha256` 到各主机 `/opt/opskit-deliveries/`，逐台执行：',
             '```bash', 'cd /opt/opskit-deliveries', 'sha256sum -c %s.sha256' % archive, 'tar -xzf %s' % archive,
             'cd %s' % dirname, 'sha256sum --strict -c SHA256SUMS', '```',
             '解压目录已存在时停止，先确认是否为本次发行版，不覆盖已存在内容。不能只传 Compose；缺镜像、依赖或脚本就不是完整交付。\n']
+    if opskit_only:
+        lines += ['## 精简管理端（可选）\n', '只需要 Hub 与 NPM 时在该主机执行，不能与完整管理中心在同一状态目录重复安装：',
+                  '```bash', 'sudo bash install.sh --role hub --action install', 'sudo bash install.sh --role hub --action check', '```',
+                  '精简管理端不提供 Spug、DBX 或集中日志接收；需要采集端时必须已有可达的完整日志中心。',
+                  '## OpsKit 本体维护\n', '此包只提供 OpsKit 本体的首次安装、检查和文档同步，不提供其数据库跨版本自动升级或回退。',
+                  '管理端配置、数据库和历史日志应按内置管理说明备份；不要用业务角色的 upgrade/rollback 命令维护 OpsKit 本体。']
+        spug += ['## OpsKit 本体维护边界\n', 'OpsKit 管理端与采集端只支持本包提供的 install/check；下方文档同步是独立动作，不升级组件或迁移数据库。',
+                 '业务应用版本更新应使用针对该应用构建、验收的交付包，并遵循其 Spug 发布配置和备份/回退说明。']
     for role in roles:
         ident, name = role['id'], role.get('name', role['id'])
         state = base + '/' + ident
@@ -818,7 +841,8 @@ def write_documents(bundle, manifest):
                  '任一步失败立即停止后续主机，收集 `%s/result.json` 和 `%s/logs/`；需要回退时按《现场操作》中本角色已声明的策略执行，不自行删除数据或换镜像。\n' % (state, state)]
     document_steps = ['## 文档中心与文档更新\n',
                       '安装 management 或 hub 后，打开 Hub 主页中的“文档中心”，可预览本包交付手册、内置说明和开发者指定的项目文档。Markdown、文本原件可继续用 vim 查看；Word 原件与图片等资源保持在文件夹中。',
-                      '新发行版不会自动假设业务机就是管理机。业务发布完成后，把完整新包复制、校验并解压到管理机，在新包目录执行以下命令，只同步文档，不更改 OpsKit 镜像、端口或凭据：',
+                      ('需要更新本包说明时，把完整新包复制、校验并解压到管理机，在新包目录执行以下命令，只同步文档，不更改 OpsKit 镜像、端口或凭据：' if opskit_only else
+                       '新发行版不会自动假设业务机就是管理机。业务发布完成后，把完整新包复制、校验并解压到管理机，在新包目录执行以下命令，只同步文档，不更改 OpsKit 镜像、端口或凭据：'),
                       '```bash', 'sudo bash install.sh --role management --action sync-docs --non-interactive', '```',
                       '仅安装 hub 时将 management 改成 hub。默认管理库位于 `%s/management/opskit/management/documents`，Hub 独立角色对应 `%s/hub/opskit/management/documents`。' % (base, base),
                       '向其他已安装的 OpsKit 管理中心汇入文档时，显式指定该中心真实的 documents 目录：',
@@ -830,7 +854,7 @@ def write_documents(bundle, manifest):
              '```bash', 'set -euo pipefail', 'cd /opt/opskit-deliveries/%s' % dirname,
              'bash install.sh --role management --action sync-docs --non-interactive', '```',
              '业务主机升级命令不附带此动作；仅安装 hub 时改用 --role hub，已有共享中心使用《现场操作》中的 --documents-dir 选项。不把文档同步当作 OpsKit 自身升级；同步失败停止文档发布并查看错误与备份。']
-    lines += ['## 交接\n', '记录客户、主机、角色、发行版本、部署时间、访问地址及实际业务验收结果。凭据通过客户批准的密码通道交接，不写入发布备注、聊天或普通工单附件。',
+    lines += ['## 交接\n', '记录客户、主机、角色、发行版本、部署时间、访问地址及实际%s验收结果。凭据通过客户批准的密码通道交接，不写入发布备注、聊天或普通工单附件。' % ('入口和日志链路' if opskit_only else '业务'),
               '保留本版和上版发行包、现场状态与数据备份。不要运行带 --purge-data 的卸载命令来处理升级失败。']
     (bundle / 'docs').mkdir(parents=True, exist_ok=True)
     (bundle / 'docs/现场操作.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
@@ -914,6 +938,7 @@ def build(repo, config_path, output, source=None, prerequisites=None, use_local=
             copy_deployment_file(path, target_path)
             target_path.chmod(0o755)
         manifest = {'schema_version': 1, 'artifact_id': artifact, 'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    'kind': config.get('kind', 'application'),
                     'application': app, 'target': target, 'roles': roles, 'images': records, 'opskit_path': 'opskit',
                     'opskit_images': ops_refs, 'opskit_roles': {name: {'image_references': [ops_refs[key] for key in keys]} for name, keys in IMAGE_KEYS.items()},
                     'prerequisites': 'prerequisites/manifest.json',
@@ -935,7 +960,43 @@ def build(repo, config_path, output, source=None, prerequisites=None, use_local=
         raise
 
 
+def build_opskit(target, output, source=None, prerequisites=None, use_local=False, kit_version=None, images=None):
+    source = opskit_source(source)
+    if kit_version is None:
+        title = safe_path(source, 'README.md').read_text(encoding='utf-8-sig').partition('\n')[0]
+        match = re.search(r'\bv([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?)\b', title)
+        if not match:
+            raise BundleError('OpsKit README 首行没有版本号，请指定 --kit-version')
+        kit_version = match[1]
+    config = validate_config({'schema_version': 1, 'kind': 'opskit',
+                             'application': {'id': 'opskit', 'name': 'OpsKit 运维工具包', 'version': kit_version},
+                             'target': target, 'roles': [], 'opskit_images': {} if images is None else images})
+    with tempfile.TemporaryDirectory(prefix='opskit-only-config-') as directory:
+        path = Path(directory) / 'opskit-delivery.json'
+        write_json(path, config)
+        return build(directory, path, output, source, prerequisites, use_local)
+
+
 def validate_acceptance(manifest, report):
+    kind, roles = manifest.get('kind', 'application'), manifest.get('roles')
+    if kind not in ('application', 'opskit') or not isinstance(roles, list):
+        raise BundleError('暂存包 kind / roles 无效')
+    if kind == 'application' and not roles or kind == 'opskit' and roles:
+        raise BundleError('业务包必须含业务角色；OpsKit 本体包不得含业务角色')
+    if kind == 'opskit':
+        expected = set(IMAGE_KEYS['management'] + IMAGE_KEYS['collector'])
+        references = manifest.get('opskit_images', {})
+        images = manifest.get('images', [])
+        if (not isinstance(references, dict) or set(references) != expected or
+                any(not isinstance(value, str) for value in references.values()) or not isinstance(images, list) or
+                len(images) != len(expected) or len(set(references.values())) != len(expected) or
+                {item.get('reference') for item in images if isinstance(item, dict)} != set(references.values())):
+            raise BundleError('OpsKit 本体包必须包含完整的 7 个内置镜像')
+        modules = manifest.get('opskit_roles', {})
+        for name, keys in IMAGE_KEYS.items():
+            module = modules.get(name) if isinstance(modules, dict) else None
+            if not isinstance(module, dict) or module.get('image_references') != [references[key] for key in keys]:
+                raise BundleError('OpsKit 本体包缺少完整模块镜像引用：%s' % name)
     if report.get('schema_version') != 1 or report.get('artifact_id') != manifest.get('artifact_id') or report.get('target') != manifest.get('target'):
         raise BundleError('验收报告 schema / artifact_id / target 与暂存包不匹配')
     if report.get('network') != 'disabled' or report.get('method') not in ('anolis-vm', 'anolis-container'):
@@ -1015,6 +1076,16 @@ def main(argv=None):
     build_parser.add_argument('--opskit-source')
     build_parser.add_argument('--prerequisites-dir', required=True)
     build_parser.add_argument('--use-local-images', action='store_true', help='仅用于已按目标架构构建/验证的本地镜像；仍检查 image ID 和平台')
+    opskit_parser = commands.add_parser('build-opskit', help='无需业务仓库，构造含全部内置镜像和系统依赖的 OpsKit 待验收气隙包')
+    opskit_parser.add_argument('--os', choices=['anolis'], required=True)
+    opskit_parser.add_argument('--version', choices=['8.9', '8.10'], required=True)
+    opskit_parser.add_argument('--arch', choices=['amd64', 'arm64'], required=True)
+    opskit_parser.add_argument('--output', required=True)
+    opskit_parser.add_argument('--opskit-source')
+    opskit_parser.add_argument('--prerequisites-dir', required=True)
+    opskit_parser.add_argument('--use-local-images', action='store_true', help='仅用于已按目标架构构建/验证的本地镜像')
+    opskit_parser.add_argument('--kit-version', help='发行版本；缺省读取 OpsKit README 首行的 vX.Y.Z')
+    opskit_parser.add_argument('--image', action='append', default=[], metavar='KEY=REF', help='覆盖指定内置镜像来源，可重复；仅允许 7 个已知 *_IMAGE 变量')
     seal_parser = commands.add_parser('seal', help='验证真实验收报告后生成可交付 tar.gz')
     seal_parser.add_argument('--bundle', required=True)
     seal_parser.add_argument('--acceptance', required=True)
@@ -1027,6 +1098,17 @@ def main(argv=None):
             path = build(arguments.repo, arguments.config, arguments.output, arguments.opskit_source,
                          arguments.prerequisites_dir, arguments.use_local_images)
             print('完整暂存目录已生成，尚未通过现场断网验收，不能交付：%s' % path)
+        elif arguments.command == 'build-opskit':
+            target = {'os': arguments.os, 'version': arguments.version, 'arch': arguments.arch}
+            images = {}
+            for value in arguments.image:
+                key, separator, reference = value.partition('=')
+                if not separator:
+                    raise BundleError('--image 必须为 KEY=REF')
+                images[key] = reference
+            path = build_opskit(target, arguments.output, arguments.opskit_source,
+                                arguments.prerequisites_dir, arguments.use_local_images, arguments.kit_version, images)
+            print('OpsKit 本体完整暂存目录已生成，须断网验收管理端、采集端和基础依赖后封包：%s' % path)
         else:
             print('正式交付包：%s' % seal(arguments.bundle, arguments.acceptance, arguments.output))
         return 0

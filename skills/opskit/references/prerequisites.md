@@ -5,7 +5,7 @@
 ## 工程师制包
 
 ```bash
-python3 skills/opskit/scripts/collect_prerequisites.py \
+python3 "<技能目录>/scripts/collect_prerequisites.py" \
   --os anolis --version 8.9 --arch amd64 \
   --output /绝对路径/prerequisites-anolis8.9-amd64
 ```

@@ -1,6 +1,6 @@
 # OpsKit 制包 Skill 模块
 
-`opskit/` 是供 AI 编程助手使用的 Skill，分发文件名为 `opskit.skill`，调用名为 `$opskit`。支持直出 OpsKit 独立安装包，或在业务代码仓库完成容器化适配、离线依赖收集、镜像固定、文档收集、隔离验收和气隙封包。
+`opskit/` 是供 AI 编程助手使用的 Skill，分发文件名为 `opskit.skill`，调用名为 `$opskit`。支持 OpsKit 联网安装版、按目标系统/架构制作运维工具独立气隙包，或在业务仓库完成业务与运维工具的完整气隙交付。
 
 ## 分发与使用
 
@@ -28,7 +28,7 @@ Claude Code 使用 `/opskit` 调用同一个 Skill。
 
 用户尚未指定模式时，Skill 会先问“是否直出 OpsKit？”，等待选择；本次任务已经明确模式时不重复询问。
 
-- **直出**：只打包 Skill 自带的 OpsKit 固定快照，包含管理端、采集端、安装入口和内置说明。无需业务仓库、Docker、业务配置或气隙验收，不携带业务应用、镜像及离线系统依赖。
+- **独立打包 OpsKit**：继续选择资源准备方式。联网安装版由 install 在现场获取依赖/镜像；运维气隙版按所选龙蜥版本和架构携带七个镜像与离线依赖，不需要业务仓库。
 - **完整气隙包**：读取业务仓库，完成适配、依赖与镜像收集、隔离验收，再生成正式现场包。
 
 已安装的完整 Skill 可直接运行：
@@ -36,6 +36,14 @@ Claude Code 使用 `/opskit` 调用同一个 Skill。
 ```text
 python3 <技能目录>/scripts/export_opskit.py --output <交付目录>
 ```
+
+上面只导出轻量联网安装版。运维工具完整气隙包先准备对应目标的已验证 `prerequisites`，再调用：
+
+```text
+python3 <技能目录>/scripts/build_bundle.py build-opskit --os anolis --version 8.9 --arch amd64 --prerequisites-dir <依赖目录> --output <暂存目录>
+```
+
+可选龙蜥 8.9/8.10、amd64/arm64，重复 `--image KEY=REF` 可指定可信内网镜像。缺少目标信息时 Skill 会询问，不根据制包机架构猜测。管理端、采集端和依赖完成断网验收后，仍通过原 `seal` 命令封包。详见[运维工具独立气隙包](opskit/references/opskit-only.md)。
 
 直出生成 `opskit-direct.tar.gz` 和同名 `.sha256`；包内含 `OPSKIT_SOURCE.json` 与 `SHA256SUMS`。只复制来源清单内且校验通过的文件，不覆盖已有归档或校验文件。源码中的 Skill 尚未带快照，需按下方分发流程打包后再使用该入口。直出包安装时仍需准备依赖和镜像，不代表完整离线安装或运行验收通过。
 
@@ -46,7 +54,8 @@ python3 <技能目录>/scripts/export_opskit.py --output <交付目录>
 ## Skill 包与现场包不同
 
 - Skill 包：代码、模板、制包工具和 OpsKit 固定源码快照，交给公司工程师及 AI 助手。
-- OpsKit 直出包：管理端、采集端、安装入口和内置说明，不包含业务应用、镜像及离线系统依赖。
+- OpsKit 联网安装包：管理端、采集端、安装入口和内置说明，由 install 在线拉取资源。
+- OpsKit 独立气隙包：目标运维镜像、离线依赖、现场向导及内置文档，不包含业务应用。
 - 正式气隙包：目标架构镜像、宿主机依赖、业务配置表单、OpsKit、现场脚本、Spug 操作手册和验收记录，交给驻场工程师。
 - 暂存目录：待验收产物。缺少真实验收报告不能通过 seal，不可当成正式现场包分发。
 

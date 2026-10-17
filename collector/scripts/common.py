@@ -198,17 +198,22 @@ def image_failure(output):
 
 
 def prepare_images(values, config, command=None, offline=False):
-    """逐个拉取，已知官方同版本来源可回退；任何缺项均阻止启动。"""
+    """逐个拉取，登记的国内/官方同版本来源可回退；缺项阻止启动。"""
     command = command or ['docker', 'compose']
 
     def services():
         result = run(command + ['config', '--format', 'json'], capture_output=True, text=True)
         return {name: item['image'] for name, item in json.loads(result.stdout)['services'].items()}
 
-    # 只允许项目官方发布的固定版本互为备用，不改写自定义仓库或离线包锁定值。
+    # 固定登记的国内加速与官方同版来源互为备用，不泛化改写仓库地址。
     alternatives = {
+        'WORKBENCH_IMAGE': ('m.daocloud.io/docker.io/library/python:3.12-alpine', 'python:3.12-alpine'),
+        'NPM_IMAGE': ('m.daocloud.io/docker.io/jc21/nginx-proxy-manager:2.16.0', 'jc21/nginx-proxy-manager:2.16.0'),
         'SPUG_IMAGE': ('ghcr.io/openspug/spug:4.1', 'openspug/spug:4.1'),
+        'MARIADB_IMAGE': ('m.daocloud.io/docker.io/library/mariadb:10.11', 'mariadb:10.11'),
         'DBX_IMAGE': ('docker.cnb.cool/dbxio.com/dbx:0.6.40', 't8y2/dbx:0.6.40'),
+        'VICTORIALOGS_IMAGE': ('m.daocloud.io/docker.io/victoriametrics/victoria-logs:v1.53.0', 'victoriametrics/victoria-logs:v1.53.0'),
+        'FLUENTBIT_IMAGE': ('m.daocloud.io/docker.io/fluent/fluent-bit:5.1.4', 'fluent/fluent-bit:5.1.4'),
     }
     ready, failures = set(), []
     for service, image in services().items():
@@ -230,7 +235,7 @@ def prepare_images(values, config, command=None, offline=False):
         errors = []
         for candidate in candidates:
             if candidate != image:
-                print(f'切换到官方同版本备用来源：{candidate}', flush=True)
+                print(f'切换到已登记的同版本备用来源：{candidate}', flush=True)
             downloaded = False
             for attempt in range(2):
                 try:

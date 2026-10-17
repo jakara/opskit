@@ -77,6 +77,17 @@ class AirgapBuilderTests(unittest.TestCase):
                     {'id': r['id'], 'action': 'install', 'passed': True, 'checks_passed': True, 'stateful_backup_passed': r['stateful']} for r in manifest['roles']],
                 'opskit': {'management': True, 'collector': True}, 'prerequisites': {'verified': True}}
 
+    def image_archive(self, command, **kwargs):
+        self.assertEqual(command[:4], ['docker', 'image', 'save', '--output'])
+        with tarfile.open(command[4], 'w') as stream:
+            for name, value in [('config.json', {'os': 'linux', 'architecture': 'amd64', 'rootfs': {'diff_ids': []}, 'config': {}}),
+                                ('manifest.json', [{'Config': 'config.json', 'RepoTags': None, 'Layers': []}])]:
+                payload = json.dumps(value).encode('utf-8')
+                info = tarfile.TarInfo(name)
+                info.size = len(payload)
+                stream.addfile(info, io.BytesIO(payload))
+        return ''
+
     def test_inspect_is_read_only_and_skips_runtime_and_links(self):
         (self.repo / 'Dockerfile').write_text('FROM busybox\n')
         (self.repo / '.env').write_text('PASSWORD=must-not-read\n')
@@ -120,6 +131,64 @@ class AirgapBuilderTests(unittest.TestCase):
         config['roles'][0]['rollback'] = 'restore-hook'
         with self.assertRaisesRegex(builder.BundleError, 'restore'):
             builder.validate_config(config)
+
+    def test_empty_roles_are_exclusive_to_opskit_kind(self):
+        config = configuration()
+        builder.validate_config(config)
+        config['kind'] = 'application'
+        builder.validate_config(config)
+        config['roles'] = []
+        for kind in ('application', 'unknown', None):
+            config['kind'] = kind
+            with self.subTest(kind=kind), self.assertRaises(builder.BundleError):
+                builder.validate_config(config)
+        config['kind'] = 'opskit'
+        builder.validate_config(config)
+        config['roles'] = configuration()['roles']
+        with self.assertRaisesRegex(builder.BundleError, '必须为空'):
+            builder.validate_config(config)
+        for overrides in ({'UNKNOWN_IMAGE': 'registry/app:1'}, {'SPUG_IMAGE': ''}, {'SPUG_IMAGE': '${IMAGE}'}, ['SPUG_IMAGE']):
+            config = configuration()
+            config['opskit_images'] = overrides
+            with self.subTest(overrides=overrides), self.assertRaisesRegex(builder.BundleError, 'opskit_images'):
+                builder.validate_config(config)
+
+    def test_build_opskit_cli_needs_no_business_repo_and_forwards_platform_and_sources(self):
+        captured = {}
+        def stage(repo, config_path, output, source, prerequisites, use_local):
+            captured.update(config=builder.read_json(config_path), repo=Path(repo), output=output, source=source,
+                            prerequisites=prerequisites, use_local=use_local)
+            self.assertEqual(builder.validate_config(captured['config']), captured['config'])
+            return Path(output) / 'staged'
+        with patch.object(builder, 'build', side_effect=stage), patch('sys.stdout', new_callable=io.StringIO):
+            result = builder.main(['build-opskit', '--os', 'anolis', '--version', '8.10', '--arch', 'arm64',
+                                   '--output', str(self.root / 'out'), '--opskit-source', str(ROOT),
+                                   '--prerequisites-dir', str(self.root / 'prereqs'), '--use-local-images',
+                                   '--kit-version', '1.2.3', '--image', 'SPUG_IMAGE=registry.example/spug:4.1',
+                                   '--image', 'DBX_IMAGE=registry.example/dbx:0.6.40'])
+        self.assertEqual(result, 0)
+        self.assertEqual(captured['config']['kind'], 'opskit')
+        self.assertEqual(captured['config']['roles'], [])
+        self.assertEqual(captured['config']['application']['version'], '1.2.3')
+        self.assertEqual(captured['config']['target'], {'os': 'anolis', 'version': '8.10', 'arch': 'arm64'})
+        self.assertEqual(captured['config']['opskit_images'], {'SPUG_IMAGE': 'registry.example/spug:4.1', 'DBX_IMAGE': 'registry.example/dbx:0.6.40'})
+        self.assertEqual(captured['source'], ROOT)
+        self.assertTrue(captured['use_local'])
+        self.assertFalse(captured['repo'].exists())
+
+    def test_build_opskit_version_and_inputs_fail_before_docker(self):
+        source = self.root / 'opskit-source'
+        source.mkdir()
+        (source / 'README.md').write_text('# 没有版本号\n')
+        with patch.object(builder, 'run') as runner, patch.object(builder, 'build') as stage:
+            with self.assertRaisesRegex(builder.BundleError, 'kit-version'):
+                builder.build_opskit(configuration()['target'], self.root / 'out', source=source)
+            with self.assertRaisesRegex(builder.BundleError, '目标'):
+                builder.build_opskit({'os': 'windows', 'version': '11', 'arch': 'amd64'}, self.root / 'out', source=source, kit_version='1.0.0')
+            with self.assertRaisesRegex(builder.BundleError, 'opskit_images'):
+                builder.build_opskit(configuration()['target'], self.root / 'out', source=source, kit_version='1.0.0', images={'UNKNOWN_IMAGE': 'app:1'})
+            runner.assert_not_called()
+            stage.assert_not_called()
 
     def test_compose_does_not_read_dotenv_and_keeps_variables(self):
         with patch.object(builder, 'run', return_value=json.dumps(compose())) as runner:
@@ -419,19 +488,9 @@ class AirgapBuilderTests(unittest.TestCase):
         fixture_script.parent.mkdir()
         fixture_script.write_text('# fixture location only\n')
         image_id = 'sha256:' + '1' * 64
-        def execute(command, **kwargs):
-            self.assertEqual(command[:4], ['docker', 'image', 'save', '--output'])
-            with tarfile.open(command[4], 'w') as stream:
-                for name, value in [('config.json', {'os': 'linux', 'architecture': 'amd64', 'rootfs': {'diff_ids': []}, 'config': {}}),
-                                    ('manifest.json', [{'Config': 'config.json', 'RepoTags': None, 'Layers': []}])]:
-                    payload = json.dumps(value).encode('utf-8')
-                    info = tarfile.TarInfo(name)
-                    info.size = len(payload)
-                    stream.addfile(info, io.BytesIO(payload))
-            return ''
         with patch.object(builder, 'compose_document', return_value=compose()), \
                 patch.object(builder, 'image_defaults', return_value={key: 'local:fixture' for key in builder.IMAGE_KEYS['management'] + builder.IMAGE_KEYS['collector']}), \
-                patch.object(builder, 'resolve_image', return_value=image_id), patch.object(builder, 'run', side_effect=execute) as runner, \
+                patch.object(builder, 'resolve_image', return_value=image_id), patch.object(builder, 'run', side_effect=self.image_archive) as runner, \
                 patch.object(builder, '__file__', str(fixture_script)):
             staged = builder.build(self.repo, path, self.root / 'out', ROOT, prerequisite_dir, True)
         self.assertEqual(runner.call_count, 1)
@@ -470,6 +529,82 @@ class AirgapBuilderTests(unittest.TestCase):
             self.assertFalse(any(m.issym() or m.islnk() or m.name.startswith('/') for m in stream.getmembers()))
             self.assertEqual(stream.getmember(staged.name + '/install.sh').mode, 0o755)
             self.assertTrue(all(m.uid == 0 and m.gid == 0 and not m.uname and not m.gname for m in stream.getmembers()))
+
+    def test_opskit_only_stage_contains_seven_images_and_seal_still_requires_runtime_acceptance(self):
+        # These archives, RPMs and acceptance are unit fixtures, never deployment evidence.
+        prerequisite_dir = self.prereqs()
+        defaults = {key: 'local:' + key.lower() for key in builder.IMAGE_KEYS['management'] + builder.IMAGE_KEYS['collector']}
+        with patch.object(builder, 'image_defaults', return_value=defaults), \
+                patch.object(builder, 'resolve_image', return_value='sha256:' + '1' * 64) as resolver, \
+                patch.object(builder, 'run', side_effect=self.image_archive) as runner, patch.object(builder, 'role_document') as role_builder:
+            staged = builder.build_opskit(configuration()['target'], self.root / 'out', ROOT, prerequisite_dir, True)
+        role_builder.assert_not_called()
+        self.assertEqual(runner.call_count, 1)
+        self.assertEqual(resolver.call_count, 7)
+        self.assertTrue(all(call.args[1:] == ('linux/amd64', True) for call in resolver.call_args_list))
+        builder.verify_checksums(staged)
+        manifest = builder.read_json(staged / 'delivery/manifest.json')
+        self.assertEqual(manifest['kind'], 'opskit')
+        self.assertEqual(manifest['roles'], [])
+        self.assertEqual(manifest['application']['id'], 'opskit')
+        self.assertIn('v' + manifest['application']['version'], (ROOT / 'README.md').read_text().splitlines()[0])
+        self.assertFalse((staged / 'application').exists())
+        self.assertEqual(manifest['target'], configuration()['target'])
+        self.assertEqual(manifest['prerequisites'], 'prerequisites/manifest.json')
+        self.assertEqual(set(manifest['opskit_images']), set(defaults))
+        self.assertEqual(len(manifest['images']), 7)
+        self.assertEqual(set(manifest['opskit_roles']), {'management', 'collector', 'hub'})
+        self.assertEqual({record['group'] for record in manifest['documents']}, {'builtin', 'delivery'})
+        self.assertFalse(manifest['verification']['target_smoke'])
+        manual = (staged / 'docs/现场操作.md').read_text()
+        spug = (staged / 'docs/Spug操作.md').read_text()
+        for command in ('--role management --action install', '--role collector --action install', '--role hub --action install', '--action sync-docs'):
+            self.assertIn(command, manual)
+        self.assertIn('不包含业务应用', manual)
+        self.assertNotIn('## 业务角色', manual)
+        self.assertIn('测试连接', spug)
+        self.assertIn('不升级组件或迁移数据库', spug)
+        self.assertNotIn('--action upgrade', spug)
+        for record in manifest['documents']:
+            self.assertEqual(builder.digest(staged / record['path']), record['sha256'])
+        report = self.acceptance(manifest)
+        builder.validate_acceptance(manifest, report)
+        for mutation in ('missing-management', 'missing-collector', 'missing-prerequisites', 'missing-image', 'missing-module', 'business-kind', 'fake-role'):
+            changed_manifest, changed_report = copy.deepcopy(manifest), copy.deepcopy(report)
+            if mutation.startswith('missing-') and mutation.split('-', 1)[1] in ('management', 'collector'):
+                changed_report['opskit'].pop(mutation.split('-', 1)[1])
+            elif mutation == 'missing-prerequisites':
+                changed_report.pop('prerequisites')
+            elif mutation == 'missing-image':
+                changed_manifest['images'].pop()
+            elif mutation == 'missing-module':
+                changed_manifest['opskit_roles'].pop('collector')
+            elif mutation == 'business-kind':
+                changed_manifest.pop('kind')
+            else:
+                changed_manifest['roles'] = configuration()['roles']
+            with self.subTest(mutation=mutation), self.assertRaises(builder.BundleError):
+                builder.validate_acceptance(changed_manifest, changed_report)
+        report_file = self.root / 'acceptance-opskit.json'
+        rejected = copy.deepcopy(report)
+        rejected['opskit']['collector'] = False
+        builder.write_json(report_file, rejected)
+        with self.assertRaises(builder.BundleError):
+            builder.seal(staged, report_file, self.root / 'release')
+        builder.write_json(report_file, report)
+        archive = builder.seal(staged, report_file, self.root / 'release')
+        with tarfile.open(archive) as stream:
+            sealed = json.load(stream.extractfile(staged.name + '/delivery/manifest.json'))
+            self.assertEqual(sealed['kind'], 'opskit')
+            self.assertEqual(sealed['roles'], [])
+            self.assertEqual(len(sealed['images']), 7)
+            self.assertTrue(sealed['verification']['target_smoke'])
+        with self.assertRaisesRegex(builder.BundleError, '已存在'):
+            builder.seal(staged, report_file, self.root / 'release')
+        with patch.object(builder, 'run') as docker:
+            with self.assertRaisesRegex(builder.BundleError, '输出已存在'):
+                builder.build_opskit(configuration()['target'], self.root / 'out', ROOT, prerequisite_dir, True)
+            docker.assert_not_called()
 
 
 if __name__ == '__main__':

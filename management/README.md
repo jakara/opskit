@@ -123,7 +123,21 @@ OpsKit 内置工具独立置顶并显示访问端口和路径，可编辑地址�
 
 `--reconfigure` 不会自动修改已有 NPM 主机和访问列表。改变域名或账户名称后，还须在 NPM WebUI 中核对对应配置；更改 Spug 初始化变量也不会重置已有账户。不要将手工修改 `.env` 当作已有应用密码的修改方式。
 
-Spug 默认使用 `ghcr.io/openspug/spug:4.1`，DBX 默认使用 `docker.cnb.cool/dbxio.com/dbx:0.6.40`。安装器逐个拉取镜像，网络超时等临时错误重试一次；上述地址与各自 Docker Hub 的官方同版地址可自动互为备用。旧配置中 `openspug/spug:4.1` 被加速服务白名单拒绝时，会尝试官方 GHCR。备用来源成功后，先在 `.backups/` 备份并核验原配置，再保存可用地址，保留已有密码。
+在线安装默认使用下列固定版本。2026-10-17 在本机制包环境核验了全部地址的 amd64/arm64 manifest，并实际拉取五项 DaoCloud 镜像；其摘要与本机缓存的官方同版摘要一致。公共加速仍可能限流或调整白名单，该核验不能保证客户内网可达。
+
+| 组件 | 默认镜像 |
+| --- | --- |
+| Hub Python | `m.daocloud.io/docker.io/library/python:3.12-alpine` |
+| NPM | `m.daocloud.io/docker.io/jc21/nginx-proxy-manager:2.16.0` |
+| MariaDB | `m.daocloud.io/docker.io/library/mariadb:10.11` |
+| VictoriaLogs | `m.daocloud.io/docker.io/victoriametrics/victoria-logs:v1.53.0` |
+| Fluent Bit（采集模块） | `m.daocloud.io/docker.io/fluent/fluent-bit:5.1.4` |
+| DBX（官方国内发布） | `docker.cnb.cool/dbxio.com/dbx:0.6.40` |
+| Spug（官方境外发布） | `ghcr.io/openspug/spug:4.1` |
+
+来源：[DaoCloud 加速说明](https://github.com/DaoCloud/public-image-mirror)、[DBX 官方说明](https://github.com/t8y2/dbx)、[Spug 官方安装说明](https://ops.spug.cc/docs/install-docker/)。Spug 4.1 尚无已核实的官方国内同版源，旧阿里云镜像不能替代当前版本；客户无对应网络时用 Skill 提前制作运维工具独立气隙包。
+
+登记的同版本国内/官方来源可互为备用，网络超时等临时错误重试一次。备用成功后先备份并核验配置再保存可用地址，保留已有密码。旧 Spug 配置被加速服务白名单拒绝时仍会尝试官方 GHCR。
 
 单个失败不会中断其他镜像下载。所有镜像就绪前不启动本次容器或发现进程；仍失败时汇总具体镜像、原因和 Docker 原始错误。按提示处理网络、仓库授权、磁盘空间或 CPU 架构后，原地重跑 `./install.sh`（Windows：`.\install.cmd`），无需重填配置。精简管理端使用 `./install.sh --hub-only`（Windows：`.\install.cmd -HubOnly`）。
 

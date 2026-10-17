@@ -55,7 +55,7 @@ CMD 仅对本次进程使用 RemoteSigned，不更改系统执行策略；下载
 | `HOST_LOG_DIR` | 已存在的宿主机日志目录绝对路径，例如 `/opt/teaching/logs` 或 `C:/apps/teaching/logs`，不允许挂载整个根目录或磁盘 |
 | `LOG_FILE_PATTERN` | 目录内的日志文件规则，例如 `*.log` |
 
-向导还可指定 `FLUENTBIT_IMAGE`，默认使用固定版本，可改为内网镜像仓库地址。
+向导还可指定 `FLUENTBIT_IMAGE`，默认 `m.daocloud.io/docker.io/fluent/fluent-bit:5.1.4`，可改为可信内网镜像仓库地址。
 
 `OPS_HOST` 和 `OPS_VHOST` 可以不同：业务机直接连接管理机私网 IP 时，仍需发送正确的管理域名以匹配 NPM 配置。向导默认使用内网 HTTP，不生成或申请证书。
 
@@ -78,7 +78,7 @@ CMD 仅对本次进程使用 RemoteSigned，不更改系统执行策略；下载
 
 每项有效输入确认后立即写入 `.env.install-progress`，地址、主机/项目/应用标签、日志目录、密码和镜像选择均可恢复。中途退出后重跑向导，回车采用上次确认的值；全部校验通过并写入正式 `.env` 后清除草稿。重新配置期间旧 `.env` 保持不变。草稿与备份含采集凭据，使用同样的受限权限，不打印密码、不进入 Git 或通用 Skill/工具包；清空数据卸载时先备份核验再清除。
 
-镜像拉取遇到网络超时等临时故障会重试一次；失败后说明镜像、原因及原始错误，保留配置，尚未启动容器。按提示处理后原地重跑 `./install.sh`（Windows：`.\install.cmd`）即可续装。Fluent Bit 不自动改换镜像来源；需要时将 `.env` 中 `FLUENTBIT_IMAGE` 改为可达的同版本、同架构内网镜像，私有仓库先 `docker login`。离线模式只检查本地镜像，缺失时提示先 `docker load`，不会联网拉取。
+镜像拉取遇到网络超时等临时故障会重试一次；失败后说明镜像、原因及原始错误，保留配置，尚未启动容器。按提示处理后原地重跑 `./install.sh`（Windows：`.\install.cmd`）即可续装。已登记的 DaoCloud 地址与官方 `fluent/fluent-bit:5.1.4` 可互为备用；自定义仓库、摘要和气隙锁定镜像不替换。需要时将 `.env` 中 `FLUENTBIT_IMAGE` 改为可达的同版本、同架构内网镜像，私有仓库先 `docker login`。普通包离线模式只检查本地镜像，缺失时提示先 `docker load`；Skill 的完整气隙包入口自动从包内导入，不联网拉取。
 
 以下 `.sh` 工具用于 Linux/macOS；Windows 可用 `docker save` / `docker load` 导出导入镜像。离线镜像独立于管理中心导出，在与目标机相同 CPU 架构的联网机器上执行：
 

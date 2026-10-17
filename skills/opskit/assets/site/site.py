@@ -110,8 +110,13 @@ def load_manifest(root):
         raise SiteError('应用 ID 无效')
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', value.get('artifact_id', '')):
         raise SiteError('交付包 artifact_id 无效')
-    if not isinstance(value.get('roles'), list) or not value['roles']:
+    kind = value.get('kind', 'application')
+    if kind not in ('application', 'opskit'):
+        raise SiteError('交付包类型无效')
+    if not isinstance(value.get('roles'), list) or (kind == 'application' and not value['roles']):
         raise SiteError('交付包缺少业务角色')
+    if kind == 'opskit' and value['roles']:
+        raise SiteError('OpsKit 独立气隙包不能包含业务角色')
     ids, projects = set(), set()
     for role in value['roles']:
         ident = role.get('id', '')

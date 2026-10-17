@@ -123,6 +123,23 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(site.SiteError):
             site.child(self.root, '../outside')
 
+    def test_opskit_only_manifest_and_role_selection_without_dummy_application(self):
+        self.manifest.update(kind='opskit', roles=[])
+        self.seal()
+        manifest = site.load_manifest(self.root)
+        args = argparse.Namespace(action='install', role=None)
+        with patch('builtins.input', return_value='1'), contextlib.redirect_stdout(io.StringIO()):
+            site.choose(manifest, args)
+        self.assertEqual(args.role, 'management')
+        self.manifest['kind'] = 'application'
+        self.seal()
+        with self.assertRaisesRegex(site.SiteError, '缺少业务角色'):
+            site.load_manifest(self.root)
+        self.manifest.update(kind='opskit', roles=[self.role])
+        self.seal()
+        with self.assertRaisesRegex(site.SiteError, '不能包含业务角色'):
+            site.load_manifest(self.root)
+
     def test_target_mismatch_precedes_state_and_docker(self):
         with patch.object(site, 'BUNDLE', self.root), patch.object(site, 'target_probe', return_value=dict(TARGET, version='8.10')):
             with self.assertRaises(site.SiteError):

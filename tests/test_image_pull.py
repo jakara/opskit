@@ -177,9 +177,31 @@ class ImagePullTests(unittest.TestCase):
 
     def test_hub_failure_resume_uses_standalone_scope(self):
         _, _, error, _, _ = self.prepare({'NPM_IMAGE': 'jc21/nginx-proxy-manager:2.16.0'},
-                                         {'jc21/nginx-proxy-manager:2.16.0': [ALLOWLIST]},
+                                         {'jc21/nginx-proxy-manager:2.16.0': [ALLOWLIST],
+                                          'm.daocloud.io/docker.io/jc21/nginx-proxy-manager:2.16.0': [ALLOWLIST]},
                                          config_name='.workbench/hub.env')
         self.assertIn('./install.sh --hub-only', error)
+
+    def test_registered_domestic_sources_fallback_without_changing_versions(self):
+        for key, upstream in (
+                ('WORKBENCH_IMAGE', 'library/python:3.12-alpine'),
+                ('NPM_IMAGE', 'jc21/nginx-proxy-manager:2.16.0'),
+                ('MARIADB_IMAGE', 'library/mariadb:10.11'),
+                ('VICTORIALOGS_IMAGE', 'victoriametrics/victoria-logs:v1.53.0'),
+                ('FLUENTBIT_IMAGE', 'fluent/fluent-bit:5.1.4')):
+            official = upstream.removeprefix('library/')
+            domestic = 'm.daocloud.io/docker.io/' + upstream
+            with self.subTest(key=key):
+                saved, calls, error, _, _ = self.prepare({key: official}, {official: [ALLOWLIST]})
+                self.assertIsNone(error)
+                self.assertEqual(saved[key], domestic)
+                self.assertIn(['docker', 'pull', domestic], calls)
+                saved, calls, error, _, _ = self.prepare({key: domestic}, {domestic: [ALLOWLIST]})
+                self.assertIsNone(error)
+                self.assertEqual(saved[key], official)
+                saved, calls, error, _, _ = self.prepare({key: domestic}, {domestic: [ALLOWLIST]}, locked=True)
+                self.assertIsNotNone(error)
+                self.assertNotIn(['docker', 'pull', official], calls)
 
     def test_unresolved_images_prevent_management_background_and_startup(self):
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):

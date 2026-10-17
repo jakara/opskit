@@ -3,7 +3,7 @@ name: opskit
 # 仅部署在管理机；外层 Nginx 终止 HTTPS，本模块只提供 HTTP。
 services:
   workbench:
-    image: ${WORKBENCH_IMAGE:-python:3.12-alpine}
+    image: ${WORKBENCH_IMAGE:-m.daocloud.io/docker.io/library/python:3.12-alpine}
     restart: unless-stopped
     command: ["python", "-u", "/app/server.py", "--bind", "0.0.0.0", "--port", "8090", "--data", "/data", "--discovery-file", "/discovery/state.json", "--seed-tools", "--documents-dir", "/documents"]
     environment:
@@ -22,7 +22,7 @@ services:
     networks: [management]
 
   proxy-manager:
-    image: ${NPM_IMAGE:-jc21/nginx-proxy-manager:2.16.0}
+    image: ${NPM_IMAGE:-m.daocloud.io/docker.io/jc21/nginx-proxy-manager:2.16.0}
     restart: unless-stopped
     depends_on:
       workbench:
@@ -63,7 +63,7 @@ services:
     networks: [management]
 
   spugdb:
-    image: ${MARIADB_IMAGE:-mariadb:10.11}
+    image: ${MARIADB_IMAGE:-m.daocloud.io/docker.io/library/mariadb:10.11}
     restart: unless-stopped
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     environment:
@@ -97,7 +97,7 @@ services:
     networks: [management]
 
   victorialogs:
-    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.53.0}
+    image: ${VICTORIALOGS_IMAGE:-m.daocloud.io/docker.io/victoriametrics/victoria-logs:v1.53.0}
     restart: unless-stopped
     command:
       - -storageDataPath=/victoria-logs-data

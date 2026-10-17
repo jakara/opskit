@@ -15,7 +15,7 @@ from urllib.request import Request, build_opener, ProxyHandler
 
 from common import ROOT, ask, docker_ready, env_text, host, image_defaults, load_env, password, port, prepare_images, run, save
 
-IMAGES = image_defaults({'FLUENTBIT_IMAGE': 'fluent/fluent-bit:5.1.4'})
+IMAGES = image_defaults({'FLUENTBIT_IMAGE': 'm.daocloud.io/docker.io/fluent/fluent-bit:5.1.4'})
 
 
 def identifier(value):

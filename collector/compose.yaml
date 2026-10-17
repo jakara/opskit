@@ -1,7 +1,7 @@
 name: opskit-collector
 services:
   fluent-bit:
-    image: ${FLUENTBIT_IMAGE:-fluent/fluent-bit:5.1.4}
+    image: ${FLUENTBIT_IMAGE:-m.daocloud.io/docker.io/fluent/fluent-bit:5.1.4}
     restart: unless-stopped
     environment:
       OPS_HOST: ${OPS_HOST:?请先运行安装向导}
