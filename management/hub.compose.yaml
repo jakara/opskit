@@ -1,0 +1,21 @@
+# 仅安装 Hub 和 NPM；共用完整管理中心的服务定义。
+name: opskit-hub
+services:
+  workbench:
+    extends:
+      file: compose.yaml
+      service: workbench
+    environment:
+      OPSKIT_COMPONENTS: npm
+    volumes:
+      - ./.workbench/hub:/data
+  proxy-manager:
+    extends:
+      file: compose.yaml
+      service: proxy-manager
+networks:
+  management:
+    driver: bridge
+volumes:
+  npm-data:
+  npm-cert-store:

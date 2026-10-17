@@ -1,0 +1,5 @@
+# 仅旧版默认 8080 部署升级时启用，保留已有 Fluent Bit 的接入。
+services:
+  proxy-manager:
+    ports:
+      - "${OPSKIT_BIND_IP:-127.0.0.1}:${OPSKIT_LEGACY_HTTP_PORT:-8080}:80"

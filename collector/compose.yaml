@@ -1,0 +1,26 @@
+name: opskit-collector
+services:
+  fluent-bit:
+    image: ${FLUENTBIT_IMAGE:-fluent/fluent-bit:5.1.4}
+    restart: unless-stopped
+    environment:
+      OPS_HOST: ${OPS_HOST:?请先运行安装向导}
+      OPS_PORT: ${OPS_PORT:-80}
+      OPS_VHOST: ${OPS_VHOST:?请先运行安装向导}
+      OPS_TLS: ${OPS_TLS:-Off}
+      HOST_ID: ${HOST_ID:?请先运行安装向导}
+      PROJECT_ID: ${PROJECT_ID:?请先运行安装向导}
+      APP_ID: ${APP_ID:?请先运行安装向导}
+      APP_ENV: ${APP_ENV:-production}
+      LOG_FILE_PATTERN: ${LOG_FILE_PATTERN:-*.log}
+      LOG_AGENT_USER: ${LOG_AGENT_USER:-logagent}
+      LOG_AGENT_PASSWORD: ${LOG_AGENT_PASSWORD:?请先运行安装向导}
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - type: bind
+        source: ${HOST_LOG_DIR:?请先运行安装向导}
+        target: /hostlogs
+        read_only: true
+      - fluentbit-data:/fluent-bit/state
+volumes:
+  fluentbit-data:

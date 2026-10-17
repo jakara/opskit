@@ -1,0 +1,14 @@
+.env
+**/.env
+**/collector.env
+**/.backups/
+**/backups/
+**/offline-images/
+**/__pycache__/
+**/.workbench/
+**/.uninstall-backups/
+management/outer-nginx.conf.example
+*.tgz
+*.tar
+dist/
+.DS_Store
