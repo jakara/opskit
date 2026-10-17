@@ -13,7 +13,7 @@ import time
 from urllib.error import HTTPError
 from urllib.request import Request, build_opener, ProxyHandler
 
-from common import ROOT, ask, docker_ready, env_text, host, image_defaults, load_env, password, port, run, save
+from common import ROOT, ask, docker_ready, env_text, host, image_defaults, load_env, password, port, prepare_images, run, save
 
 IMAGES = image_defaults({'FLUENTBIT_IMAGE': 'fluent/fluent-bit:5.1.4'})
 
@@ -108,8 +108,7 @@ def main():
     docker_ready()
     run(['docker', 'compose', 'config', '--quiet'])
     check_connection(v)
-    if not args.offline:
-        run(['docker', 'compose', 'pull'])
+    prepare_images(v, ROOT / '.env', offline=args.offline)
     run(['docker', 'compose', 'up', '-d', '--pull', 'never'])
     time.sleep(3)
     state = run(['docker', 'compose', 'ps', '--all', '--format', 'json'], capture_output=True, text=True).stdout

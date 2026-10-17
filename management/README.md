@@ -120,7 +120,11 @@ OpsKit 内置工具独立置顶并显示访问端口和路径，可编辑地址�
 
 `--reconfigure` 不会自动修改已有 NPM 主机和访问列表。改变域名或账户名称后，还须在 NPM WebUI 中核对对应配置；更改 Spug 初始化变量也不会重置已有账户。不要将手工修改 `.env` 当作已有应用密码的修改方式。
 
-镜像仓库访问受限时，可在向导中将 `SPUG_IMAGE` 填为 `ghcr.io/openspug/spug:4.1`，将 `DBX_IMAGE` 填为 `docker.cnb.cool/dbxio.com/dbx:0.6.40`；或使用已同步到内网仓库的同版镜像。版本和 CPU 架构仍需与目标机匹配。
+Spug 默认使用 `ghcr.io/openspug/spug:4.1`，DBX 默认使用 `docker.cnb.cool/dbxio.com/dbx:0.6.40`。安装器逐个拉取镜像，网络超时等临时错误重试一次；上述地址与各自 Docker Hub 的官方同版地址可自动互为备用。旧配置中 `openspug/spug:4.1` 被加速服务白名单拒绝时，会尝试官方 GHCR。备用来源成功后，先在 `.backups/` 备份并核验原配置，再保存可用地址，保留已有密码。
+
+单个失败不会中断其他镜像下载。所有镜像就绪前不启动本次容器或发现进程；仍失败时汇总具体镜像、原因和 Docker 原始错误。按提示处理网络、仓库授权、磁盘空间或 CPU 架构后，原地重跑 `./install.sh`（Windows：`.\install.cmd`），无需重填配置。精简管理端使用 `./install.sh --hub-only`（Windows：`.\install.cmd -HubOnly`）。
+
+自定义仓库、摘要引用、环境变量指定的镜像及 `image-defaults.json` 锁定的气隙包镜像不自动替换，也不修改 Docker 的镜像加速配置。可手动将 `.env`（精简管理端为 `.workbench/hub.env`）中的对应 `*_IMAGE` 改成已同步到内网仓库的同版、同架构镜像；私有仓库先 `docker login`。离线模式逐个检查本地镜像，缺失时列出需 `docker load` 导入的镜像，始终禁止拉取。
 
 ## 接入外层 Nginx 与业务机
 

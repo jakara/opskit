@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -174,6 +175,108 @@ def password(value):
 
 def run(args, **kwargs):
     return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
+
+
+def image_failure(output):
+    """分类用于恢复建议；只有网络类错误在同一来源重试一次。"""
+    text = output.lower()
+    if any(s in text for s in ('allowlist', 'whitelist', '白名单')):
+        return '镜像加速服务白名单拒绝，请使用官方来源或同步到内网仓库', False
+    if any(s in text for s in ('no space left', 'disk quota', 'read-only file system')):
+        return 'Docker 存储空间不足或不可写，请检查 Docker 数据目录', False
+    if any(s in text for s in ('no matching manifest', 'does not match the specified platform')):
+        return '镜像没有当前 CPU 架构版本，请准备匹配架构的同版镜像', False
+    if any(s in text for s in ('manifest unknown', 'not found', 'name unknown')):
+        return '镜像地址或版本不存在，请核对镜像引用', False
+    if any(s in text for s in ('unauthorized', 'authentication required', 'denied', 'forbidden', 'toomanyrequests', 'rate limit')):
+        return '仓库拒绝访问或限流，请核对仓库权限、docker login 或镜像加速服务', False
+    if any(s in text for s in ('timeout', 'timed out', 'connection reset', 'connection refused', 'no such host',
+                               'network is unreachable', 'tls handshake', 'unexpected eof', 'bad gateway',
+                               'service unavailable', '500 internal', '502', '503', '504')):
+        return '镜像仓库网络连接失败，请检查 Docker 引擎的网络、代理和 DNS', True
+    return '镜像拉取失败，请按下面的 Docker 原始错误排查', False
+
+
+def prepare_images(values, config, command=None, offline=False):
+    """逐个拉取，已知官方同版本来源可回退；任何缺项均阻止启动。"""
+    command = command or ['docker', 'compose']
+
+    def services():
+        result = run(command + ['config', '--format', 'json'], capture_output=True, text=True)
+        return {name: item['image'] for name, item in json.loads(result.stdout)['services'].items()}
+
+    # 只允许项目官方发布的固定版本互为备用，不改写自定义仓库或离线包锁定值。
+    alternatives = {
+        'SPUG_IMAGE': ('ghcr.io/openspug/spug:4.1', 'openspug/spug:4.1'),
+        'DBX_IMAGE': ('docker.cnb.cool/dbxio.com/dbx:0.6.40', 't8y2/dbx:0.6.40'),
+    }
+    ready, failures = set(), []
+    for service, image in services().items():
+        if image in ready:
+            continue
+        print(f'准备镜像 [{service}]：{image}' + ('（仅检查本地）' if offline else '（下载期间请稍候）'), flush=True)
+        if offline:
+            try:
+                run(['docker', 'image', 'inspect', image], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                ready.add(image)
+            except subprocess.CalledProcessError:
+                failures.append(f'{service}: {image}\n  本地镜像缺失，请先 docker load 导入匹配架构的镜像；离线模式不会联网。')
+            continue
+        key = next((key for key, refs in alternatives.items()
+                    if values.get(key) == image and image in refs), None)
+        candidates = [image]
+        if key and key not in os.environ and not (ROOT / 'image-defaults.json').exists():
+            candidates += [ref for ref in alternatives[key] if ref != image]
+        errors = []
+        for candidate in candidates:
+            if candidate != image:
+                print(f'切换到官方同版本备用来源：{candidate}', flush=True)
+            downloaded = False
+            for attempt in range(2):
+                try:
+                    run(['docker', 'pull', candidate], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding='utf-8', errors='replace')
+                    downloaded = True
+                    break
+                except subprocess.CalledProcessError as exc:
+                    output = (exc.stdout or '').strip()
+                    reason, retry = image_failure(output)
+                    if retry and attempt == 0:
+                        print(f'{reason}；2 秒后重试一次。', flush=True)
+                        time.sleep(2)
+                        continue
+                    errors.append(f'{candidate}\n  {reason}\n  {output[-1500:]}')
+                    print(f'未能获取 {candidate}：{reason}', flush=True)
+                    break
+            if not downloaded:
+                # 存储或架构故障不通过换来源掩盖。
+                if any(s in output.lower() for s in ('no space left', 'disk quota', 'read-only file system',
+                                                     'no matching manifest', 'does not match the specified platform')):
+                    break
+                continue
+            if candidate != image:
+                updated = dict(values, **{key: candidate})
+                save(config, env_text(updated))
+                values.update(updated)
+                print(f'已保存可用镜像来源到 {config}，原配置已备份。')
+            ready.add(candidate)
+            print(f'通过：{service}', flush=True)
+            break
+        else:
+            failures.append(f'{service}: ' + '\n  '.join(errors))
+            continue
+        if candidate not in ready:
+            failures.append(f'{service}: ' + '\n  '.join(errors))
+    if failures:
+        resume = '.\\install.cmd' if sys.platform == 'win32' else './install.sh'
+        scope = (' -HubOnly' if sys.platform == 'win32' else ' --hub-only') if config.name == 'hub.env' else ''
+        raise RuntimeError('镜像准备未完成，尚未启动本次容器和发现进程：\n' + '\n'.join(failures) +
+                           f'\n配置和已下载镜像已保留：{config}\n'
+                           f'修复后在 {ROOT} 重跑 {resume}{scope}。'
+                           '\n可修改上述配置中的对应 *_IMAGE 为可达的同版本仓库地址；私有仓库需先 docker login。'
+                           '\n已离线导入全部镜像时使用 --offline（Windows：-Offline）。')
+    if set(services().values()) - ready:
+        raise RuntimeError(f'Compose 实际镜像与已准备镜像不一致，请检查环境变量或 Compose 覆盖配置；配置保留在 {config}')
 
 
 def docker_ready():

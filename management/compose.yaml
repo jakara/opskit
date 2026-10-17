@@ -42,7 +42,7 @@ services:
     networks: [management]
 
   spug:
-    image: ${SPUG_IMAGE:-openspug/spug:4.1}
+    image: ${SPUG_IMAGE:-ghcr.io/openspug/spug:4.1}
     restart: unless-stopped
     ports:
       - "${OPSKIT_BIND_IP:-127.0.0.1}:${SPUG_HTTP_PORT:-8081}:80"
@@ -82,7 +82,7 @@ services:
     networks: [management]
 
   dbx:
-    image: ${DBX_IMAGE:-t8y2/dbx:0.6.40}
+    image: ${DBX_IMAGE:-docker.cnb.cool/dbxio.com/dbx:0.6.40}
     restart: unless-stopped
     environment:
       DBX_PASSWORD: ${DBX_PASSWORD:?请先运行安装向导}

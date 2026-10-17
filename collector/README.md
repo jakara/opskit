@@ -76,6 +76,8 @@ CMD 仅对本次进程使用 RemoteSigned，不更改系统执行策略；下载
 
 参数可以组合。只生成配置时会在必要时自动准备 Python，不检查或启动 Docker；离线标志禁止联网补依赖和拉镜像，须提前准备基础依赖及镜像。已存在的 `.env` 会被复用；配置变化前会备份并核验原文件。`.env` 含采集密码，Unix 使用权限 600，Windows 在 NTFS 上限制为当前用户、SYSTEM、管理员访问，已有 ACL 修改前会备份 SDDL，不提交或随公共交付包分发。
 
+镜像拉取遇到网络超时等临时故障会重试一次；失败后说明镜像、原因及原始错误，保留配置，尚未启动容器。按提示处理后原地重跑 `./install.sh`（Windows：`.\install.cmd`）即可续装。Fluent Bit 不自动改换镜像来源；需要时将 `.env` 中 `FLUENTBIT_IMAGE` 改为可达的同版本、同架构内网镜像，私有仓库先 `docker login`。离线模式只检查本地镜像，缺失时提示先 `docker load`，不会联网拉取。
+
 以下 `.sh` 工具用于 Linux/macOS；Windows 可用 `docker save` / `docker load` 导出导入镜像。离线镜像独立于管理中心导出，在与目标机相同 CPU 架构的联网机器上执行：
 
 ```bash

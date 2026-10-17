@@ -11,14 +11,14 @@ import socket
 import subprocess
 import sys
 
-from common import ROOT, ask, docker_ready, env_text, host, image_defaults, ipv4, load_env, password, port, powershell, run, save
+from common import ROOT, ask, docker_ready, env_text, host, image_defaults, ipv4, load_env, password, port, powershell, prepare_images, run, save
 
 IMAGES = image_defaults({
     'WORKBENCH_IMAGE': 'python:3.12-alpine',
     'NPM_IMAGE': 'jc21/nginx-proxy-manager:2.16.0',
-    'SPUG_IMAGE': 'openspug/spug:4.1',
+    'SPUG_IMAGE': 'ghcr.io/openspug/spug:4.1',
     'MARIADB_IMAGE': 'mariadb:10.11',
-    'DBX_IMAGE': 't8y2/dbx:0.6.40',
+    'DBX_IMAGE': 'docker.cnb.cool/dbxio.com/dbx:0.6.40',
     'VICTORIALOGS_IMAGE': 'victoriametrics/victoria-logs:v1.53.0',
 })
 PASSWORD_KEYS = ('NPM_ADMIN_PASSWORD', 'SPUG_ADMIN_PASSWORD', 'SPUG_DB_PASSWORD',
@@ -244,9 +244,8 @@ def install_hub(http_port, configure_only=False, offline=False):
                 occupied = listener.connect_ex(('127.0.0.1', value)) == 0
             if occupied:
                 raise RuntimeError(f'本机 {value} 端口已被占用，请调整配置或停止占用程序后重跑') from None
+    prepare_images(v, config, command, offline)
     start_discovery()
-    if not offline:
-        run(command + ['pull'])
     run(command + ['up', '-d', '--pull', 'never'])
     from configure_proxy import initialize
     initialize(v)
@@ -284,10 +283,9 @@ def main():
         print('配置阶段完成。准备好 Docker 后重新运行 ./install.sh 即可继续。')
         return
     docker_ready()
-    start_discovery()
     run(['docker', 'compose', 'config', '--quiet'])
-    if not args.offline:
-        run(['docker', 'compose', 'pull'])
+    prepare_images(v, ROOT / '.env', offline=args.offline)
+    start_discovery()
     run(['docker', 'compose', 'up', '-d', '--pull', 'never'])
     from configure_proxy import initialize
     initialize(v)
