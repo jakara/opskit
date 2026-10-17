@@ -787,7 +787,7 @@ def choose(manifest, args):
             roles = [r for r in roles if r.get('rollback') != 'unsupported']
         choices = [(r['id'], r.get('name', r['id'])) for r in roles]
         if args.action in ('install', 'check'):
-            choices += [('management', 'OpsKit 管理中心'), ('collector', 'Fluent Bit 日志采集端'), ('hub', 'Hub 与 NPM')]
+            choices += [('management', 'OpsKit 管理中心'), ('collector', 'Fluent Bit 日志采集端'), ('hub', '精简管理端')]
         elif args.action == 'sync-docs':
             choices += [('management', 'OpsKit 管理中心文档'), ('hub', '独立 Hub 文档')]
         if not choices:

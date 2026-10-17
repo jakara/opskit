@@ -11,7 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 try {
     if (-not $Module) {
-        Write-Host "OpsKit 安装向导`n  1) 管理中心（Hub 及完整运维工具）`n  2) 日志采集端（Fluent Bit）`n  3) Hub 与 NPM（本机应用工作台）"
+        Write-Host "OpsKit 安装向导`n  1) 管理中心（Hub 及完整运维工具）`n  2) 日志采集端（Fluent Bit）`n  3) 精简管理端"
         $Module = Read-Host '请选择模块 [1/2/3]'
     }
     $options = @{ ConfigureOnly = $ConfigureOnly; Offline = $Offline; Reconfigure = $Reconfigure }

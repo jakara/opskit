@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 MODULE="${1:-}"
 if [[ -z "$MODULE" ]]; then
-  printf 'OpsKit 安装向导\n  1) 管理中心（Hub 及完整运维工具）\n  2) 日志采集端（Fluent Bit，每台业务机安装一次）\n  3) Hub 与 NPM（本机 80 端口，发现 Docker 和 HTTP 服务）\n'
+  printf 'OpsKit 安装向导\n  1) 管理中心（Hub 及完整运维工具）\n  2) 日志采集端（Fluent Bit，每台业务机安装一次）\n  3) 精简管理端\n'
   read -r -p '请选择模块 [1/2/3]：' MODULE
 else
   shift

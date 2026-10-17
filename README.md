@@ -46,7 +46,7 @@ Hub 首页提供“交付文档”入口，按交付手册、项目文档和内�
 
 | 安装范围 | 启动命令 | 用途 |
 | --- | --- | --- |
-| Hub + NPM | `./install.sh hub` | 发现本机 Docker 和 HTTP 服务，首页 `http://127.0.0.1/`，由 NPM 监听 80 端口 |
+| 精简管理端（Hub + NPM） | `./install.sh hub` | 发现本机 Docker 和 HTTP 服务，首页 `http://127.0.0.1/`，由 NPM 监听 80 端口 |
 | 完整管理中心 | `./install.sh management` | 同一个 Hub，加上 NPM、Spug、DBX、VictoriaLogs 等工具 |
 | 日志采集端 | `./install.sh collector` | 每台业务机独立采集日志 |
 
