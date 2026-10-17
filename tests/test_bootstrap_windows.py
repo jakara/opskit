@@ -44,7 +44,8 @@ class WindowsBootstrapTests(unittest.TestCase):
                 self.assertIn(flag, text)
             self.assertIn('Invoke-OpsKitInstaller', text)
         management = (ROOT / 'management/install.ps1').read_text(encoding='utf-8-sig')
-        self.assertIn("'--hub-only', '--port'", management)
+        self.assertIn("$arguments += '--hub-only'", management)
+        self.assertIn("$PSBoundParameters.ContainsKey('Port')", management)
 
 
 if __name__ == '__main__':

@@ -58,9 +58,15 @@ def validate(v):
         raise ValueError('运维访问和日志写入必须使用不同账户')
 
 
-def configure(existing, reconfigure=False, interactive=True):
+def configure(existing, reconfigure=False, interactive=True, checkpoint=None, draft=None):
     v = dict(existing)
-    prompt = ask if interactive else lambda label, default, validator, **kw: str(default)
+
+    def prompt(key, label, default, validator, **kwargs):
+        value = ask(label, default, validator, **kwargs) if interactive else str(default)
+        v[key] = value
+        if checkpoint:
+            checkpoint(v)
+
     if existing and 'SPUG_HTTP_PORT' not in existing:
         v['SPUG_HTTP_PORT'] = '8081'
         if v.get('OPSKIT_HTTP_PORT') == '8080':
@@ -71,29 +77,32 @@ def configure(existing, reconfigure=False, interactive=True):
                 files.append('legacy.compose.yaml')
             v['COMPOSE_FILE'] = os.pathsep.join(files)
             print('HTTP 首页将迁移到 80，同时保留旧 8080 日志接入口；Spug 改用 8081，原配置写入前会备份。')
-    if not existing or reconfigure or any(key not in v for key in (*PASSWORD_KEYS, 'NPM_ADMIN_EMAIL', 'LOG_INGEST_HOST')):
+    if draft:
+        v.update(draft)
+    if not existing or reconfigure or draft or any(key not in v for key in (*PASSWORD_KEYS, 'NPM_ADMIN_EMAIL', 'LOG_INGEST_HOST')):
         print('\n管理中心配置：外层 Nginx 负责 HTTPS，本中心不生成或申请证书。')
-        v['OPS_PUBLIC_HOST'] = prompt('外层 Nginx 使用的访问域名（不含协议和路径）', v.get('OPS_PUBLIC_HOST', 'ops.example.internal'), host)
-        v['OPS_PUBLIC_SCHEME'] = prompt('浏览器最终使用的协议', v.get('OPS_PUBLIC_SCHEME', 'https'), lambda s: s in ('http', 'https'))
-        v['OPS_PUBLIC_PORT'] = prompt('浏览器最终访问端口', v.get('OPS_PUBLIC_PORT', '443' if v['OPS_PUBLIC_SCHEME'] == 'https' else '80'), port)
-        v['OPSKIT_BIND_IP'] = prompt('管理机 HTTP 监听 IPv4（外层代理在本机时用 127.0.0.1）', v.get('OPSKIT_BIND_IP', '127.0.0.1'), ipv4)
-        v['OPSKIT_HTTP_PORT'] = prompt('管理机 HTTP 端口', v.get('OPSKIT_HTTP_PORT', '80'), port)
-        v['NPM_BIND_IP'] = prompt('NPM 管理界面监听 IPv4', v.get('NPM_BIND_IP', '127.0.0.1'), ipv4)
-        v['NPM_ADMIN_PORT'] = prompt('NPM 管理界面端口', v.get('NPM_ADMIN_PORT', '8181'), port)
-        v['SPUG_HTTP_PORT'] = prompt('Spug 独立 HTTP 端口（不能与前两项端口重复）', v.get('SPUG_HTTP_PORT', '8081'),
+        prompt('OPS_PUBLIC_HOST', '外层 Nginx 使用的访问域名（不含协议和路径）', v.get('OPS_PUBLIC_HOST', 'ops.example.internal'), host)
+        prompt('OPS_PUBLIC_SCHEME', '浏览器最终使用的协议', v.get('OPS_PUBLIC_SCHEME', 'https'), lambda s: s in ('http', 'https'))
+        prompt('OPS_PUBLIC_PORT', '浏览器最终访问端口', v.get('OPS_PUBLIC_PORT', '443' if v['OPS_PUBLIC_SCHEME'] == 'https' else '80'), port)
+        prompt('OPSKIT_BIND_IP', '管理机 HTTP 监听 IPv4（外层代理在本机时用 127.0.0.1）', v.get('OPSKIT_BIND_IP', '127.0.0.1'), ipv4)
+        prompt('OPSKIT_HTTP_PORT', '管理机 HTTP 端口', v.get('OPSKIT_HTTP_PORT', '80'), port)
+        prompt('NPM_BIND_IP', 'NPM 管理界面监听 IPv4', v.get('NPM_BIND_IP', '127.0.0.1'), ipv4)
+        prompt('NPM_ADMIN_PORT', 'NPM 管理界面端口', v.get('NPM_ADMIN_PORT', '8181'), port)
+        prompt('SPUG_HTTP_PORT', 'Spug 独立 HTTP 端口（不能与前两项端口重复）', v.get('SPUG_HTTP_PORT', '8081'),
                                     lambda s: port(s) and s not in (v['OPSKIT_HTTP_PORT'], v['NPM_ADMIN_PORT']))
-        v['LOG_INGEST_HOST'] = prompt('业务机连接管理机的内网 IP 或域名', v.get('LOG_INGEST_HOST', v['OPS_PUBLIC_HOST']), host)
-        v['LOG_RETENTION_DAYS'] = prompt('日志保留天数', v.get('LOG_RETENTION_DAYS', '14'), lambda s: s.isdigit() and 1 <= int(s) <= 3650)
-        v['NPM_ADMIN_EMAIL'] = prompt('NPM 管理员邮箱（仅作登录名，不发送邮件）', v.get('NPM_ADMIN_EMAIL', 'admin@example.internal'), lambda s: bool(re.fullmatch(r'[A-Za-z0-9_.+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}', s)))
+        prompt('LOG_INGEST_HOST', '业务机连接管理机的内网 IP 或域名', v.get('LOG_INGEST_HOST', v['OPS_PUBLIC_HOST']), host)
+        prompt('LOG_RETENTION_DAYS', '日志保留天数', v.get('LOG_RETENTION_DAYS', '14'), lambda s: s.isdigit() and 1 <= int(s) <= 3650)
+        prompt('NPM_ADMIN_EMAIL', 'NPM 管理员邮箱（仅作登录名，不发送邮件）', v.get('NPM_ADMIN_EMAIL', 'admin@example.internal'), lambda s: bool(re.fullmatch(r'[A-Za-z0-9_.+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}', s)))
         for key, label, default in (
                 ('SPUG_ADMIN_USER', 'Spug 管理员用户名', 'admin'),
                 ('OPS_ADMIN_USER', '运维入口用户名', 'operator'),
                 ('LOG_AGENT_USER', '日志写入用户名', 'logagent')):
-            while True:
-                v[key] = prompt(label, v.get(key, default), lambda s: bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,31}', s)))
-                if key != 'LOG_AGENT_USER' or v[key] != v['OPS_ADMIN_USER']:
-                    break
-                print('运维访问和日志写入必须使用不同账户，请重新输入日志写入用户名。')
+            def valid_user(value):
+                if key == 'LOG_AGENT_USER' and value == v['OPS_ADMIN_USER']:
+                    print('运维访问和日志写入必须使用不同账户，请重新输入日志写入用户名。')
+                    return False
+                return bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,31}', value))
+            prompt(key, label, v.get(key, default), valid_user)
         print('密码要求：12～128 位英文字母、数字或常用符号；不含空白、美元符、引号和反斜杠。')
         for key, label in (
                 ('NPM_ADMIN_PASSWORD', 'NPM 管理员密码'),
@@ -102,12 +111,14 @@ def configure(existing, reconfigure=False, interactive=True):
                 ('OPS_ADMIN_PASSWORD', '运维入口密码'),
                 ('LOG_AGENT_PASSWORD', '日志写入密码')):
             if not password(v.get(key, '')) or v[key].startswith('REPLACE_'):
-                v[key] = prompt(label, secrets.token_hex(24), password, secret=True)
+                prompt(key, label, secrets.token_hex(24), password, secret=True)
         if not v.get('SPUG_DB_PASSWORD') or v['SPUG_DB_PASSWORD'].startswith('REPLACE_'):
             v['SPUG_DB_PASSWORD'] = secrets.token_hex(24)
+            if checkpoint:
+                checkpoint(v)
     for key, image in IMAGES.items():
-        if not existing or reconfigure:
-            v[key] = prompt(f'{key} 镜像地址（可填私有仓库或官方备用源）', v.get(key, image),
+        if not existing or reconfigure or draft:
+            prompt(key, f'{key} 镜像地址（可填私有仓库或官方备用源）', v.get(key, image),
                          lambda s: bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@-]+', s)))
         else:
             v.setdefault(key, image)
@@ -210,7 +221,9 @@ def start_discovery():
 
 def install_hub(http_port, configure_only=False, offline=False):
     config = ROOT / '.workbench/hub.env'
-    v = configure(load_env(config), interactive=False)
+    previous = load_env(config)
+    http_port = int(previous.get('OPSKIT_HTTP_PORT', '80')) if http_port is None else http_port
+    v = configure(previous, interactive=False)
     v.update(HUB_ONLY='true', OPS_PUBLIC_HOST='localhost', OPS_PUBLIC_SCHEME='http',
              OPS_PUBLIC_PORT=str(http_port), OPSKIT_HTTP_PORT=str(http_port),
              OPSKIT_BIND_IP='127.0.0.1', NPM_BIND_IP='127.0.0.1')
@@ -258,14 +271,14 @@ def main():
     parser = argparse.ArgumentParser(description='OpsKit 管理中心安装向导')
     parser.add_argument('--hub-only', action='store_true', help='只运行统一 Hub，不安装其他运维工具')
     parser.add_argument('--mode', choices=('development', 'production'), help=argparse.SUPPRESS)
-    parser.add_argument('--port', type=int, default=80, help='NPM 的本机 HTTP 端口，默认 80')
+    parser.add_argument('--port', type=int, help='NPM 的本机 HTTP 端口，沿用已保存值，新装默认 80')
     parser.add_argument('--configure-only', action='store_true', help='只生成配置，不启动容器')
     parser.add_argument('--offline', action='store_true', help='仅使用已导入的本地镜像')
     parser.add_argument('--reconfigure', action='store_true', help='重新引导网络等配置，保留已有凭据')
     args = parser.parse_args()
     os.umask(0o077)
     if args.hub_only or args.mode == 'development':
-        if not 1 <= args.port <= 65535:
+        if args.port is not None and not 1 <= args.port <= 65535:
             parser.error('Hub 端口须为 1～65535')
         install_hub(args.port, args.configure_only, args.offline)
         return
@@ -275,8 +288,14 @@ def main():
         print('发现 v0.1 根目录配置，将保留原文件并迁移已有密码。')
     existing = load_env(source)
     existing.pop('HUB_ONLY', None)
-    v = configure(existing, args.reconfigure)
+    progress = ROOT / '.env.install-progress'
+    draft = load_env(progress)
+    if draft:
+        print('发现未完成配置，已将上次确认的选择作为默认值；已有密码继续保留。')
+    v = configure(existing, args.reconfigure, draft=draft,
+                  checkpoint=lambda values: save(progress, env_text(values)))
     write_outputs(v)
+    progress.unlink(missing_ok=True)
     print(f'配置已保存：{ROOT / ".env"}（已限制文件访问权限，密码不显示在终端）')
     print('已生成 collector.env（只含采集连接凭据）及 outer-nginx.conf.example。')
     if args.configure_only:

@@ -30,7 +30,7 @@ class SkillDistributionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'source'
             source.mkdir()
-            for name in ('.env', '.env.production', 'client.json', 'users.db', 'archive.tar',
+            for name in ('.env', '.env.production', '.env.install-progress', '.install-options.json', 'client.json', 'users.db', 'archive.tar',
                          'compose.yaml', '.env.example', 'install.sh'):
                 (source / name).write_text('fixture')
             (source / '.workbench').mkdir()

@@ -46,33 +46,40 @@ def validate(v):
     v['OPS_TLS'] = 'On' if v['OPS_SCHEME'] == 'https' else 'Off'
 
 
-def configure(existing, reconfigure=False):
+def configure(existing, reconfigure=False, checkpoint=None, draft=None):
     v = dict(existing)
+    if draft:
+        v.update(draft)
+
+    def prompt(key, label, default, validator, **kwargs):
+        value = ask(label, default, validator, **kwargs)
+        v[key] = value.replace('\\', '/') if key == 'HOST_LOG_DIR' and sys.platform == 'win32' else value
+        if checkpoint:
+            checkpoint(v)
+
     if sys.platform == 'win32' and 'HOST_LOG_DIR' in v:
         v['HOST_LOG_DIR'] = v['HOST_LOG_DIR'].replace('\\', '/')
     required = ('HOST_ID', 'PROJECT_ID', 'APP_ID', 'APP_ENV', 'HOST_LOG_DIR', 'LOG_FILE_PATTERN',
                 'OPS_HOST', 'OPS_VHOST', 'OPS_PORT', 'OPS_SCHEME', 'LOG_AGENT_USER', 'LOG_AGENT_PASSWORD')
-    if reconfigure or any(key not in v for key in required):
+    if reconfigure or draft or any(key not in v for key in required):
         print('\n采集端配置：默认向管理机内网 HTTP 写入，不需要证书。')
-        v['OPS_HOST'] = ask('管理机可连接的内网 IP 或域名', v.get('OPS_HOST', 'ops.example.internal'), host)
-        v['OPS_SCHEME'] = ask('日志接入协议（直连内网用 http，经过外层 HTTPS 用 https）', v.get('OPS_SCHEME', 'http'), lambda s: s in ('http', 'https'))
-        v['OPS_PORT'] = ask('日志接入端口', v.get('OPS_PORT', '443' if v['OPS_SCHEME'] == 'https' else '80'), port)
-        v['OPS_VHOST'] = ask('NPM 代理主机的域名（与管理端一致）', v.get('OPS_VHOST', v['OPS_HOST']), host)
+        prompt('OPS_HOST', '管理机可连接的内网 IP 或域名', v.get('OPS_HOST', 'ops.example.internal'), host)
+        prompt('OPS_SCHEME', '日志接入协议（直连内网用 http，经过外层 HTTPS 用 https）', v.get('OPS_SCHEME', 'http'), lambda s: s in ('http', 'https'))
+        prompt('OPS_PORT', '日志接入端口', v.get('OPS_PORT', '443' if v['OPS_SCHEME'] == 'https' else '80'), port)
+        prompt('OPS_VHOST', 'NPM 代理主机的域名（与管理端一致）', v.get('OPS_VHOST', v['OPS_HOST']), host)
         for key, label, default in (
                 ('HOST_ID', '主机标识', platform.node().split('.')[0]),
                 ('PROJECT_ID', '项目标识', 'college-project'),
                 ('APP_ID', '应用标识', 'academic-service'),
                 ('APP_ENV', '运行环境', 'production'),
                 ('LOG_AGENT_USER', '日志写入用户名', 'logagent')):
-            v[key] = ask(label, v.get(key, default), identifier)
+            prompt(key, label, v.get(key, default), identifier)
         default_directory = 'C:/logs/myapp' if sys.platform == 'win32' else '/var/log/myapp'
-        v['HOST_LOG_DIR'] = ask('业务日志绝对目录（必须已存在）', v.get('HOST_LOG_DIR', default_directory), log_directory)
-        if sys.platform == 'win32':
-            v['HOST_LOG_DIR'] = v['HOST_LOG_DIR'].replace('\\', '/')
-        v['LOG_FILE_PATTERN'] = ask('该目录中的日志文件匹配规则', v.get('LOG_FILE_PATTERN', '*.log'), pattern)
+        prompt('HOST_LOG_DIR', '业务日志绝对目录（必须已存在）', v.get('HOST_LOG_DIR', default_directory), log_directory)
+        prompt('LOG_FILE_PATTERN', '该目录中的日志文件匹配规则', v.get('LOG_FILE_PATTERN', '*.log'), pattern)
         if not password(v.get('LOG_AGENT_PASSWORD', '')) or v.get('LOG_AGENT_PASSWORD', '').startswith('REPLACE_'):
-            v['LOG_AGENT_PASSWORD'] = ask('管理端发放的日志写入密码', '', password, secret=True)
-        v['FLUENTBIT_IMAGE'] = ask('Fluent Bit 镜像地址（可填私有仓库）', v.get('FLUENTBIT_IMAGE', IMAGES['FLUENTBIT_IMAGE']),
+            prompt('LOG_AGENT_PASSWORD', '管理端发放的日志写入密码', '', password, secret=True)
+        prompt('FLUENTBIT_IMAGE', 'Fluent Bit 镜像地址（可填私有仓库）', v.get('FLUENTBIT_IMAGE', IMAGES['FLUENTBIT_IMAGE']),
                                   lambda s: bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@-]+', s)))
     v.setdefault('FLUENTBIT_IMAGE', IMAGES['FLUENTBIT_IMAGE'])
     validate(v)
@@ -99,8 +106,14 @@ def main():
     parser.add_argument('--reconfigure', action='store_true', help='重新引导连接地址、标签和日志路径')
     args = parser.parse_args()
     os.umask(0o077)
-    v = configure(load_env(ROOT / '.env'), args.reconfigure)
+    progress = ROOT / '.env.install-progress'
+    draft = load_env(progress)
+    if draft:
+        print('发现未完成配置，已将上次确认的选择作为默认值；采集密码继续保留。')
+    v = configure(load_env(ROOT / '.env'), args.reconfigure, draft=draft,
+                  checkpoint=lambda values: save(progress, env_text(values)))
     save(ROOT / '.env', env_text(v))
+    progress.unlink(missing_ok=True)
     print(f'配置已保存：{ROOT / ".env"}（权限 600）')
     if args.configure_only:
         print('配置阶段完成。准备好 Docker 和管理端后重新运行 ./install.sh。')

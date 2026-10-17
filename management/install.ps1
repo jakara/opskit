@@ -15,7 +15,10 @@ try {
     . "$PSScriptRoot/scripts/bootstrap.ps1"
     Invoke-OpsKitLocation -Entry $PSCommandPath -Parameters $PSBoundParameters
     $arguments = @()
-    if ($HubOnly) { $arguments += @('--hub-only', '--port', [string]$Port) }
+    if ($HubOnly) {
+        $arguments += '--hub-only'
+        if ($PSBoundParameters.ContainsKey('Port')) { $arguments += @('--port', [string]$Port) }
+    }
     if ($ConfigureOnly) { $arguments += '--configure-only' }
     if ($Offline) { $arguments += '--offline' }
     if ($Reconfigure) { $arguments += '--reconfigure' }

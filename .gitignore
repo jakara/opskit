@@ -1,5 +1,7 @@
 .env
 **/.env
+**/.env.install-*
+**/.install-options.json
 **/collector.env
 **/.backups/
 **/backups/

@@ -101,6 +101,7 @@ OpsKit 内置工具独立置顶并显示访问端口和路径，可编辑地址�
 安装生成的文件均在本目录：
 
 - `.env`：管理中心全部配置和凭据，Unix 权限为 600，Windows 使用受限 NTFS ACL，保留在管理机。
+- `.env.install-progress`：未完成向导的私密草稿，每项有效输入确认后立即保存。中断后重跑时恢复为默认值，已确认的密码保留；全部通过校验及正式配置输出完成后删除。重新配置时正式 `.env` 在完成前保持不变。
 - `.workbench/hub.env`：单独 Hub 与 NPM 的配置及管理凭据，Unix 权限为 600，Windows 使用受限 NTFS ACL。单独安装的首页仅本机访问，不能将此文件的 `HUB_ONLY` 配置直接用于远程管理入口。
 - `collector.env`：仅包含日志接入地址、协议、端口、虚拟主机名及采集账户，交给业务机使用。
 - `outer-nginx.conf.example`：外层已有 HTTPS 服务需要合并的反向代理片段。
@@ -117,6 +118,8 @@ OpsKit 内置工具独立置顶并显示访问端口和路径，可编辑地址�
 ```
 
 仅生成配置时仍会在缺失时自动准备 Python，但不操作 Docker。参数可以组合，例如 `./install.sh --configure-only --reconfigure`。修改已有配置前，脚本会先在 `.backups/` 中保存并核验原文件；保留这些备份以便恢复。
+
+已完成配置重跑时直接复用；需要更改时使用 `--reconfigure`（Windows：`-Reconfigure`）。未完成草稿会自动进入向导，无需另加参数，回车采用上次确认的选项。精简管理端的 HTTP 端口默认沿用 `.workbench/hub.env`，只有显式传入 `--port` / `-Port` 才更改。安装模块和位置保存在 `.install-options.json`，这些本机文件均不随通用工具包分发。
 
 `--reconfigure` 不会自动修改已有 NPM 主机和访问列表。改变域名或账户名称后，还须在 NPM WebUI 中核对对应配置；更改 Spug 初始化变量也不会重置已有账户。不要将手工修改 `.env` 当作已有应用密码的修改方式。
 

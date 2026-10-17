@@ -11,6 +11,7 @@ import stat
 import sys
 import tempfile
 
+from options import read, remember
 
 IGNORED = {'.git', '.backups', '__pycache__', '.DS_Store', '.venv', 'node_modules'}
 
@@ -94,7 +95,7 @@ def inventory(source):
 
 def private_file(name):
     name = name.casefold()
-    return (name.startswith('.env') and name != '.env.example') or name.endswith('.env')
+    return name == '.install-options.json' or (name.startswith('.env') and name != '.env.example') or name.endswith('.env')
 
 
 def preserve_local(path):
@@ -281,6 +282,15 @@ def choose(source, arguments):
         print('保留当前位置；可用 --install-dir 指定安装目录。', flush=True)
         return source, remaining
     default = 3 if platform.system() == 'Linux' and getattr(os, 'geteuid', lambda: 1)() != 0 else 1
+    previous = read(source).get('directory')
+    if not previous and source.name in ('management', 'collector') and (source.parent / 'install.sh').is_file():
+        parent_choice = read(source.parent).get('directory')
+        previous = str(Path(parent_choice) / source.name) if parent_choice else None
+    if previous:
+        if source.resolve() == Path(previous).resolve():
+            print('沿用上次选择的当前位置。', flush=True)
+            return source, remaining
+        default = previous
     print('\n请选择安装位置（已有文件可确认覆盖，覆盖前自动备份）：')
     for number, (path, description) in enumerate(choices, 1):
         print('  {}) {}（{}）'.format(number, path, description))
@@ -317,6 +327,17 @@ def main():
         raise ValueError('安装包缺少入口：' + args.entry)
     arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
     target, remaining = choose(source, arguments)
+    help_only = any(arg.lower() in ('--help', '-h', '-?') for arg in remaining)
+    config_only = any(arg.lower() in ('--configure-only', '-configureonly') for arg in remaining)
+    explicit_location = any(arg.lower() in ('--install-dir', '--keep-location') for arg in arguments)
+    # 只生成配置的默认原地行为，不覆盖上次明确选择的安装目录。
+    if not help_only and (not config_only or explicit_location):
+        remember(target, directory=str(target))
+        if source != target:
+            try:
+                remember(source, directory=str(target))
+            except OSError as exc:
+                print('原解压目录不可写，已在目标位置记录安装选择：' + str(exc), file=sys.stderr)
     if args.entry.endswith('.ps1'):
         shell = shutil.which('powershell.exe') or shutil.which('pwsh')
         if not shell:
@@ -336,6 +357,6 @@ if __name__ == '__main__':
     except (EOFError, KeyboardInterrupt):
         print('\n已取消安装；未启动服务。', file=sys.stderr)
         sys.exit(1)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, RuntimeError) as error:
         print('安装位置未就绪：' + str(error), file=sys.stderr)
         sys.exit(1)

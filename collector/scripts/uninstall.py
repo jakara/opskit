@@ -178,7 +178,7 @@ def local_paths(root, hub_only=False, discovery_in_use=False):
         if not discovery_in_use:
             names.append('.workbench/discovery')
     else:
-        names = ['.env', 'collector.env', 'outer-nginx.conf.example', '.workbench', '.backups']
+        names = ['.env', '.env.install-progress', 'collector.env', 'outer-nginx.conf.example', '.workbench', '.backups']
     return [root / name for name in names if (root / name).exists() or (root / name).is_symlink()]
 
 

@@ -10,7 +10,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = 'opskit'
-EXCLUDED = {'.git', '.DS_Store', '__pycache__', '.env', 'collector.env', '.backups',
+EXCLUDED = {'.git', '.DS_Store', '__pycache__', '.env', 'collector.env', '.backups', '.install-options.json',
             '.uninstall-backups', '.document-backups', 'backups', '.workbench', 'offline-images', 'dist', 'node_modules'}
 
 
