@@ -1,6 +1,6 @@
 # 安装 OpsKit Skill
 
-本页供 Claude Code、Codex 等具有联网和文件操作能力的智能体执行。用户要求“安装这个 Skill”时，完成下面的安装与核验即可；不要启动 OpsKit 服务或为当前业务仓库制包。
+本页供 Claude Code、Codex 等具有联网和文件操作能力的智能体执行。用户要求“安装这个 Skill”时，完成下面的安装、核验和功能介绍；不要启动 OpsKit 服务或为当前业务仓库制包。
 
 ## 安装来源与位置
 
@@ -43,6 +43,7 @@
    ```text
    SKILL.md
    scripts/build_bundle.py
+   scripts/export_opskit.py
    scripts/collect_prerequisites.py
    assets/site/site.py
    assets/site/install.sh
@@ -59,8 +60,8 @@
    <Python> -B <技能目标目录>/scripts/build_bundle.py inspect --repo <技能目标目录>/assets/example
    ```
 
-5. 报告实际安装目录、来源提交 SHA、核验结果和当前框架的调用方式。确认框架能发现技能；若当前会话尚未刷新，提示重新打开会话后检查。文件检查通过与框架实际发现分开报告，不宣称已经验证业务系统的气隙部署。清理本次临时克隆，保留升级前备份。
+5. 报告实际安装目录、来源提交 SHA、核验结果和当前框架的调用方式。确认框架能发现技能；若当前会话尚未刷新，提示重新打开会话后检查。文件检查通过与框架实际发现分开报告，不宣称已经验证业务系统的气隙部署。
 
-安装后可在业务仓库使用：“使用 OpsKit，为当前仓库生成现场离线交付包，目标龙蜥 8.9 x86_64。”目标系统、架构及业务版本以具体项目为准。
+6. 安装核验通过后，主动读取已安装副本的 `SKILL.md`，按其中“安装后介绍与功能咨询”一节，用简体中文介绍当前版本的功能、可实现的目标、两种交付方式和可复制示例。不能只说“安装成功”或只报告文件路径，也不能把本页旧版本的功能描述当作当前能力。若框架发现尚待刷新，说明文件已就绪后仍可介绍功能；安装失败时先报告具体缺项，不宣称安装完成。介绍不触发模式选择、Docker 操作或制包。随后清理本次临时克隆，保留升级前备份。
 
 技能目录与发现方式依据 [OpenAI 官方文档](https://learn.chatgpt.com/docs/build-skills)及 [Claude Code 官方文档](https://code.claude.com/docs/en/skills)。

@@ -10,7 +10,7 @@
 安装这个 Skill：https://raw.githubusercontent.com/jakara/opskit/main/skill.md
 ```
 
-智能体会按仓库根目录的 [skill.md](../skill.md) 下载完整源码、生成包含 OpsKit 快照的 Skill，并安装、核验。不要直接用通用目录安装器复制源码中的 `skills/opskit/`，它还缺少生成的 `assets/opskit/`。
+智能体会按仓库根目录的 [skill.md](../skill.md) 下载完整源码、生成包含 OpsKit 快照的 Skill，并安装、核验。完成后会主动介绍当前版本的功能、直出与完整气隙交付的区别，以及可复制的使用示例。不要直接用通用目录安装器复制源码中的 `skills/opskit/`，它还缺少生成的 `assets/opskit/`。
 
 也可将已打包 `.skill` 文件按 ZIP 解压，把其中的 `opskit/` 放到所用助手的技能目录。例如 Codex 为 `~/.agents/skills/opskit/`，Claude Code 为 `~/.claude/skills/opskit/`；Windows 对应用户目录下的同名位置，已配置的技能目录优先。不要只复制 SKILL.md，scripts、references、assets 都必须保留。
 
