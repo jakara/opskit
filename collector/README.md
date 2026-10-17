@@ -1,5 +1,7 @@
 # OpsKit 日志采集端
 
+交互安装先检查当前安装包位置，推荐本系统下的 `opskit-collector` 安装目录；选择后复制、校验并从新位置继续。可用 `--install-dir /实际目录` 指定位置或 `--keep-location` 保留当前位置；Windows 对应 `-InstallDir`、`-KeepLocation`。已有非空目标不会覆盖；只生成配置和非交互调用默认不搬移。
+
 本模块在每台业务机上独立运行 Fluent Bit，将应用日志文件发送到管理中心 VictoriaLogs。它不安装 Spug、DBX 或 NPM，也不需要管理中心的完整配置和管理员密码。
 
 ## 安装前准备

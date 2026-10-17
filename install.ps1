@@ -5,11 +5,15 @@ param(
     [switch]$ConfigureOnly,
     [switch]$Offline,
     [switch]$Reconfigure,
-    [ValidateRange(1, 65535)][int]$Port = 80
+    [ValidateRange(1, 65535)][int]$Port = 80,
+    [string]$InstallDir = '',
+    [switch]$KeepLocation
 )
 
 $ErrorActionPreference = 'Stop'
 try {
+    . "$PSScriptRoot/management/scripts/bootstrap.ps1"
+    Invoke-OpsKitLocation -Entry $PSCommandPath -Parameters $PSBoundParameters
     if (-not $Module) {
         Write-Host "OpsKit 安装向导`n  1) 管理中心（Hub 及完整运维工具）`n  2) 日志采集端（Fluent Bit）`n  3) 精简管理端"
         $Module = Read-Host '请选择模块 [1/2/3]'

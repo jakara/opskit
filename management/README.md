@@ -2,6 +2,8 @@
 
 在独立管理机上集中运行统一工作台、Nginx Proxy Manager、Spug、DBX、VictoriaLogs；业务机只需安装另一份 `collector/` 日志采集模块。两者可以分别复制、安装和离线交付。
 
+直接运行安装入口时会显示当前安装包位置，并按系统推荐长期存放目录；选择后复制、校验并从新位置继续。只复制本模块时目录名使用 `opskit-management`。也可用 `--install-dir /实际目录` 指定位置或 `--keep-location` 保留当前目录；Windows 对应 `-InstallDir`、`-KeepLocation`。已有非空目标不会覆盖。只生成配置或非交互调用默认不搬移。
+
 外层已有 Nginx 负责 HTTPS。本模块只提供 HTTP，默认首页为 `http://127.0.0.1/`（80 端口），Nginx Proxy Manager（下称 NPM）管理界面为 `127.0.0.1:8181`；不映射 443，不要求用户准备证书，也不申请业务证书。NPM 镜像启动要求的 `/etc/letsencrypt` 使用独立空数据卷挂载，HTTP 代理不使用它。
 
 ## 统一应用工作台（Hub）

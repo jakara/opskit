@@ -185,6 +185,40 @@ function Initialize-OpsKitDocker([switch]$Offline) {
     }
 }
 
+function Invoke-OpsKitLocation([string]$Entry, [System.Collections.IDictionary]$Parameters) {
+    if ($env:OPSKIT_LOCATION_READY) { return }
+    if (-not (Test-OpsKitWindows)) { throw 'Windows 入口仅适用于 Windows 10/11；Linux/macOS 请运行 install.sh。' }
+    $oldUtf8 = $env:PYTHONUTF8
+    $oldIoEncoding = $env:PYTHONIOENCODING
+    $oldEncoding = [Console]::OutputEncoding
+    try {
+        $env:PYTHONUTF8 = '1'
+        $env:PYTHONIOENCODING = 'utf-8'
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+        Update-OpsKitProcessPath
+        $python = Get-OpsKitPython -Offline:([bool]$Parameters['Offline'])
+        $arguments = @('--source', (Split-Path -Parent $Entry), '--entry', 'install.ps1', '--')
+        if ($Parameters['InstallDir']) { $arguments += @('--install-dir', [string]$Parameters['InstallDir']) }
+        if ($Parameters['KeepLocation']) { $arguments += '--keep-location' }
+        foreach ($key in $Parameters.Keys) {
+            if ($key -in 'InstallDir', 'KeepLocation') { continue }
+            $value = $Parameters[$key]
+            if ($value -is [System.Management.Automation.SwitchParameter]) {
+                if ($value.IsPresent) { $arguments += "-$key" }
+            } else {
+                $arguments += @("-$key", [string]$value)
+            }
+        }
+        & $python -u (Join-Path $PSScriptRoot 'location.py') @arguments
+        $code = $LASTEXITCODE
+    } finally {
+        $env:PYTHONUTF8 = $oldUtf8
+        $env:PYTHONIOENCODING = $oldIoEncoding
+        [Console]::OutputEncoding = $oldEncoding
+    }
+    exit $code
+}
+
 function Invoke-OpsKitInstaller([string]$Installer, [string[]]$Arguments = @(), [switch]$ConfigureOnly, [switch]$Offline) {
     if (-not (Test-OpsKitWindows)) { throw 'Windows 入口仅适用于 Windows 10/11；Linux/macOS 请运行 install.sh。' }
     $oldUtf8 = $env:PYTHONUTF8

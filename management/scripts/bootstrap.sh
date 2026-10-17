@@ -225,7 +225,7 @@ opskit_desktop_installed() {
 opskit_sudo_rerun() {
   if [[ "$EUID" -ne 0 ]] && command -v sudo >/dev/null 2>&1 && sudo -- docker info >/dev/null 2>&1; then
     printf '当前用户无权访问 Docker，将以 sudo 重新执行同一安装命令。\n'
-    exec sudo -- "$OPSKIT_INSTALLER" "${OPSKIT_ARGS[@]}"
+    exec sudo -- "$OPSKIT_INSTALLER" --keep-location "${OPSKIT_ARGS[@]}"
   fi
   return 1
 }

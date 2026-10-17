@@ -2,12 +2,15 @@
 param(
     [switch]$ConfigureOnly,
     [switch]$Offline,
-    [switch]$Reconfigure
+    [switch]$Reconfigure,
+    [string]$InstallDir = '',
+    [switch]$KeepLocation
 )
 
 $ErrorActionPreference = 'Stop'
 try {
     . "$PSScriptRoot/scripts/bootstrap.ps1"
+    Invoke-OpsKitLocation -Entry $PSCommandPath -Parameters $PSBoundParameters
     $arguments = @()
     if ($ConfigureOnly) { $arguments += '--configure-only' }
     if ($Offline) { $arguments += '--offline' }

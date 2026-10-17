@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+if [[ -z "${OPSKIT_LOCATION_READY:-}" ]]; then
+  . "$ROOT/management/scripts/bootstrap.sh"
+  opskit_bootstrap --configure-only "$@"
+  exec "$OPSKIT_PYTHON" -B "$ROOT/management/scripts/location.py" --source "$ROOT" --entry install.sh -- "$@"
+fi
 MODULE="${1:-}"
 if [[ -z "$MODULE" ]]; then
   printf 'OpsKit 安装向导\n  1) 管理中心（Hub 及完整运维工具）\n  2) 日志采集端（Fluent Bit，每台业务机安装一次）\n  3) 精简管理端\n'

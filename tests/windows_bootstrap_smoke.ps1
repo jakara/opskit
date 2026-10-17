@@ -31,6 +31,7 @@ $capture = Join-Path $temporary 'capture.json'
 @'
 @{ arguments = @($args); utf8 = $env:PYTHONUTF8; io = $env:PYTHONIOENCODING } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $env:OPSKIT_BOOTSTRAP_CAPTURE -Encoding UTF8
 $global:LASTEXITCODE = 0
+if ($env:OPSKIT_LOCATION_TEST_CODE) { $global:LASTEXITCODE = [int]$env:OPSKIT_LOCATION_TEST_CODE }
 '@ | Set-Content -LiteralPath $fixture -Encoding UTF8
 $oldCapture = $env:OPSKIT_BOOTSTRAP_CAPTURE
 $env:OPSKIT_BOOTSTRAP_CAPTURE = $capture
@@ -104,6 +105,65 @@ try {
         Assert-True ($data.utf8 -eq '1' -and $data.io -eq 'utf-8') 'Chinese Python encoding not configured.'
         Assert-True ($env:PYTHONUTF8 -eq $oldUtf8) 'Calling environment not restored.'
     }
+    & {
+        . $bootstrap
+        $oldReady = $env:OPSKIT_LOCATION_READY
+        try {
+            $env:OPSKIT_LOCATION_READY = '1'
+            function Get-OpsKitPython { throw 'Relocated entry must not run location selection twice.' }
+            function Test-OpsKitWindows { throw 'Ready entry must return immediately.' }
+            Invoke-OpsKitLocation -Entry 'unused/install.ps1' -Parameters @{}
+            Assert-True $true 'Ready entry did not return.'
+        } finally { $env:OPSKIT_LOCATION_READY = $oldReady }
+    }
+    $locationDriver = Join-Path $temporary 'location-driver.ps1'
+    @'
+param([string]$Bootstrap, [string]$Fixture)
+$ErrorActionPreference = 'Stop'
+. $Bootstrap
+function Test-OpsKitWindows { return $true }
+function Update-OpsKitProcessPath { }
+function Get-OpsKitPython([switch]$Offline) {
+    if (-not $Offline) { throw 'Location selection lost offline mode.' }
+    return $Fixture
+}
+$env:OPSKIT_LOCATION_READY = ''
+$env:PYTHONUTF8 = 'previous-utf8'
+$env:PYTHONIOENCODING = 'previous-io'
+$parameters = @{
+    Module = 'hub'; Port = 8081; InstallDir = 'C:\现场工具\Ops Kit';
+    KeepLocation = [switch]$true; ConfigureOnly = [switch]$true;
+    Offline = [switch]$true; Reconfigure = [switch]$false
+}
+try {
+    Invoke-OpsKitLocation -Entry 'C:\下载包\install.ps1' -Parameters $parameters
+} finally {
+    @{ utf8 = $env:PYTHONUTF8; io = $env:PYTHONIOENCODING } | ConvertTo-Json | Set-Content -LiteralPath ($env:OPSKIT_BOOTSTRAP_CAPTURE + '.restored') -Encoding UTF8
+}
+throw 'Original entry continued after relocated installer returned.'
+'@ | Set-Content -LiteralPath $locationDriver -Encoding UTF8
+    $oldLocationCode = $env:OPSKIT_LOCATION_TEST_CODE
+    try {
+        $env:OPSKIT_LOCATION_TEST_CODE = '23'
+        $shell = (Get-Process -Id $PID).Path
+        & $shell -NoLogo -NoProfile -File $locationDriver -Bootstrap $bootstrap -Fixture $fixture
+        Assert-True ($LASTEXITCODE -eq 23) 'Relocated child exit code was lost or original installer continued.'
+        $data = Get-Content -LiteralPath $capture -Raw | ConvertFrom-Json
+        Assert-True ($data.arguments[0] -eq '-u' -and $data.arguments[1] -eq (Join-Path (Split-Path (Resolve-Path $bootstrap).Path -Parent) 'location.py')) 'Location helper path changed.'
+        $separator = [Array]::IndexOf($data.arguments, '--')
+        Assert-True ($separator -gt 0) 'Original parameters were not separated from location options.'
+        $locationArgs = @($data.arguments[2..($separator - 1)])
+        $childArgs = @($data.arguments[($separator + 1)..($data.arguments.Count - 1)])
+        Assert-True (($childArgs -contains '--install-dir') -and ($childArgs -contains 'C:\现场工具\Ops Kit')) 'Unicode destination with spaces changed.'
+        Assert-True ($childArgs -contains '--keep-location') 'KeepLocation not mapped after the separator.'
+        foreach ($value in @('-Module', 'hub', '-Port', '8081', '-ConfigureOnly', '-Offline')) {
+            Assert-True ($childArgs -contains $value) "Original parameter lost: $value"
+        }
+        Assert-True ($childArgs -notcontains '-Reconfigure' -and $childArgs -notcontains '-InstallDir' -and $childArgs -notcontains '-KeepLocation') 'False or consumed switches reached the relocated installer.'
+        Assert-True ($data.utf8 -eq '1' -and $data.io -eq 'utf-8') 'Location helper did not use UTF-8.'
+        $restored = Get-Content -LiteralPath ($capture + '.restored') -Raw | ConvertFrom-Json
+        Assert-True ($restored.utf8 -eq 'previous-utf8' -and $restored.io -eq 'previous-io') 'Location helper leaked encoding changes.'
+    } finally { $env:OPSKIT_LOCATION_TEST_CODE = $oldLocationCode }
     & {
         . $bootstrap
         function Get-OpsKitApplication { return $null }

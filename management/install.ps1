@@ -4,12 +4,15 @@ param(
     [switch]$ConfigureOnly,
     [switch]$Offline,
     [switch]$Reconfigure,
-    [ValidateRange(1, 65535)][int]$Port = 80
+    [ValidateRange(1, 65535)][int]$Port = 80,
+    [string]$InstallDir = '',
+    [switch]$KeepLocation
 )
 
 $ErrorActionPreference = 'Stop'
 try {
     . "$PSScriptRoot/scripts/bootstrap.ps1"
+    Invoke-OpsKitLocation -Entry $PSCommandPath -Parameters $PSBoundParameters
     $arguments = @()
     if ($HubOnly) { $arguments += @('--hub-only', '--port', [string]$Port) }
     if ($ConfigureOnly) { $arguments += '--configure-only' }

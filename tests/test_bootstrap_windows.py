@@ -27,6 +27,15 @@ class WindowsBootstrapTests(unittest.TestCase):
         self.assertIn("$Id -eq 'Docker.DockerDesktop'", bootstrap)
         self.assertIn("'--interactive'", bootstrap)
 
+    def test_install_location_runs_before_configuration(self):
+        for name in ['install.ps1', 'management/install.ps1', 'collector/install.ps1']:
+            text = (ROOT / name).read_text(encoding='utf-8-sig')
+            self.assertIn("[string]$InstallDir = ''", text)
+            self.assertIn('[switch]$KeepLocation', text)
+            location = text.index('Invoke-OpsKitLocation -Entry $PSCommandPath -Parameters $PSBoundParameters')
+            next_step = text.index('if (-not $Module)') if name == 'install.ps1' else text.index('Invoke-OpsKitInstaller -Installer')
+            self.assertLess(location, next_step)
+
     def test_windows_switches_reach_existing_python_installers(self):
         for module in ['management', 'collector']:
             text = (ROOT / module / 'install.ps1').read_text(encoding='utf-8-sig')

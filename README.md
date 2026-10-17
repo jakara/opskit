@@ -56,6 +56,28 @@ Hub 不再区分开发模式和生产模式。完整管理中心会预置运维�
 
 ## 开始安装
 
+交互安装先显示安装包位置和当前终端目录，再按系统推荐安装位置：
+
+| 系统 | 推荐位置 |
+| --- | --- |
+| 龙蜥及其他 Linux | `/opt/opskit`、`/srv/opskit`、`~/opskit`；普通用户默认用户目录 |
+| macOS | `~/Applications/opskit`、`~/opskit`、`/usr/local/share/opskit` |
+| Windows | `%LOCALAPPDATA%\opskit`、`%USERPROFILE%\opskit`、`%ProgramData%\opskit` |
+
+也可保留当前位置、自定义目录或取消。选择新目录后复制完整安装包，校验文件内容及脚本权限，再从新位置重新进入安装向导；原包保留，配置和后续启动路径以新位置为准。已有非空目标、父子嵌套目录、链接和权限不足会立即提示并允许重选，不覆盖现有配置。系统共享目录需要写入权限。只复制单个模块时，推荐目录名分别使用 `opskit-management`、`opskit-collector`。
+
+复制包含普通文件、离线镜像和文档，排除 Git 元数据、根目录 `dist/`、虚拟环境及 Python 缓存。仅显示帮助、只生成配置或无交互输入时默认使用当前位置；需要复制时可显式指定目录。Linux/macOS 使用 `--install-dir`，Windows 使用 `-InstallDir`；`--keep-location` / `-KeepLocation` 明确保留原位置。完整气隙包沿用其现场运行目录，由现场入口自动复制 OpsKit，不重复询问位置。
+
+```bash
+./install.sh management --install-dir "$HOME/opskit"
+./install.sh collector --keep-location
+```
+
+```powershell
+.\install.cmd management -InstallDir "$env:LOCALAPPDATA\opskit"
+.\install.cmd collector -KeepLocation
+```
+
 直接运行安装入口即可。脚本先检查并复用已有 Python 3.9+、Docker 和 Compose V2；缺失时自动准备依赖，然后进入配置向导。在线首次安装需要联网和必要的管理员授权，不再要求用户先手工安装 Python。
 
 - 龙蜥 / RHEL 系：优先使用系统仓库并行安装新版 Python，保留 `platform-python` 和原 `python3`。缺 Docker/Compose 时先尝试已有仓库，必要时加入 OpsKit 专用 Docker 官方 RHEL 仓库，仓库变更前备份并核验。

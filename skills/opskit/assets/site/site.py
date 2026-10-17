@@ -756,7 +756,7 @@ def builtin(manifest, role, args, directory, runner, records):
             if (module == 'collector') == (key == 'FLUENTBIT_IMAGE'):
                 if key in values and values[key] != reference:
                     raise SiteError('现场配置不能覆盖气隙包镜像：' + key)
-    command = ['bash', str(working / 'install.sh'), role, '--offline']
+    command = ['bash', str(working / 'install.sh'), role, '--offline', '--keep-location']
     if role == 'hub' and configuration.exists():
         command += ['--port', read_env(configuration).get('OPSKIT_HTTP_PORT', '80')]
     # 先完成现有中文向导；非交互缺值在导入镜像/启动前退出，不会等待无意义输入。
