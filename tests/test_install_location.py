@@ -114,13 +114,120 @@ class LocationTests(unittest.TestCase):
         occupied.mkdir()
         (occupied / 'keep.txt').write_text('preserve')
         with patch.object(sys.stdin, 'isatty', return_value=True), \
-             patch('builtins.input', side_effect=['9', '5', str(occupied), '5', str(self.destination)]), \
+             patch('builtins.input', side_effect=['9', '5', str(occupied), 'n', '5', str(self.destination)]), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             result, args = location.choose(self.source, ['hub', '--port', '19090'])
         self.assertEqual(result, self.destination)
         self.assertEqual(args, ['hub', '--port', '19090'])
         self.assertIn('请重新选择', output.getvalue())
         self.assertEqual((occupied / 'keep.txt').read_text(), 'preserve')
+
+    def test_recommended_location_continues_without_prompt_or_copy(self):
+        with patch.object(location, 'recommendations', return_value=[(self.source, 'recommended')]), \
+             patch.object(sys.stdin, 'isatty', return_value=True), \
+             patch('builtins.input', side_effect=AssertionError('must not prompt')), \
+             patch.object(location, 'copy_package', side_effect=AssertionError('must not copy')), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(location.choose(self.source, ['management']), (self.source, ['management']))
+        self.assertIn('当前已在推荐目录', output.getvalue())
+
+    def test_module_inside_recommended_full_package_is_not_relocated(self):
+        (self.source / 'management').mkdir()
+        module = self.source / 'management'
+        with patch.object(location, 'recommendations', side_effect=lambda source: [(self.source if source == self.source else self.base / 'standalone', '')]), \
+             patch('builtins.input', side_effect=AssertionError('must not prompt')), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(location.choose(module, [])[0], module)
+
+    def test_current_directory_and_direct_custom_path_are_supported(self):
+        with patch.object(sys.stdin, 'isatty', return_value=True), patch('builtins.input', return_value='4'), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(location.choose(self.source, [])[0], self.source)
+        with patch.object(sys.stdin, 'isatty', return_value=True), patch('builtins.input', return_value=str(self.destination)), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(location.choose(self.source, [])[0], self.destination)
+
+    def test_explicit_destination_overrides_recommended_location(self):
+        with patch.object(location, 'recommendations', return_value=[(self.source, 'recommended')]), \
+             patch('builtins.input', side_effect=AssertionError('explicit target must not prompt')), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(location.choose(self.source, ['--install-dir', str(self.destination)])[0], self.destination)
+
+    def existing_install(self):
+        self.destination.mkdir()
+        (self.destination / 'install.sh').write_text('old installer')
+        (self.destination / 'install.sh').chmod(0o755)
+        (self.destination / '.env').write_text('CUSTOMER_PASSWORD=keep')
+        (self.destination / 'CUSTOM.ENV').write_text('CUSTOM_PASSWORD=keep')
+        (self.source / 'CUSTOM.ENV').write_text('CUSTOM_PASSWORD=default')
+        (self.destination / 'local-notes.txt').write_text('retain unrelated notes')
+        (self.destination / '.workbench').mkdir()
+        (self.destination / '.workbench/entries.json').write_text('customer state')
+        (self.destination / 'documents').mkdir()
+        (self.destination / 'documents/manual.md').write_text('local edits')
+        (self.source / 'documents').mkdir()
+        (self.source / 'documents/manual.md').write_text('new defaults')
+
+    def test_overwrite_verifies_backup_updates_code_and_preserves_local_files(self):
+        self.existing_install()
+        before, _ = location.inventory(self.destination)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            location.copy_package(self.source, self.destination, overwrite=True)
+        self.assertEqual((self.destination / 'install.sh').read_bytes(), (self.source / 'install.sh').read_bytes())
+        for path in ('.env', 'CUSTOM.ENV', 'documents/manual.md', '.workbench/entries.json', 'local-notes.txt'):
+            self.assertEqual(location.digest(self.destination / path), before[Path(path)][0])
+        backup, = (self.destination / '.backups').glob('install-*')
+        self.assertEqual((backup / 'files/install.sh').read_text(), 'old installer')
+        for line in (backup / 'SHA256SUMS').read_text().splitlines():
+            checksum, name = line.split('  ', 1)
+            self.assertEqual(location.digest(backup / name), checksum)
+        self.assertIn('备份已核验', output.getvalue())
+
+    def test_interactive_overwrite_requires_confirmation_and_noninteractive_requires_flag(self):
+        self.existing_install()
+        with patch.object(sys.stdin, 'isatty', return_value=False), contextlib.redirect_stdout(io.StringIO()), \
+             self.assertRaisesRegex(ValueError, '--overwrite'):
+            location.choose(self.source, ['--install-dir', str(self.destination)])
+        self.assertEqual((self.destination / 'install.sh').read_text(), 'old installer')
+        with patch.object(sys.stdin, 'isatty', return_value=True), patch('builtins.input', return_value='y'), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(location.choose(self.source, ['--install-dir', str(self.destination)])[0], self.destination)
+        with patch.object(sys.stdin, 'isatty', return_value=False), patch('builtins.input', side_effect=AssertionError('must not prompt')), \
+             contextlib.redirect_stdout(io.StringIO()):
+            result, remaining = location.choose(self.source, ['--install-dir', str(self.destination), '--overwrite', 'hub'])
+        self.assertEqual((result, remaining), (self.destination, ['hub']))
+
+    def test_failed_overwrite_restores_changed_code_and_retains_backup(self):
+        self.existing_install()
+        (self.source / 'aaa-new.txt').write_text('new file to roll back')
+        (self.source / 'zzz-failure.txt').write_text('failed write')
+        before, directories = location.inventory(self.destination)
+        original = location.copy_file
+        def fail(source, target, record):
+            if source == self.source / 'zzz-failure.txt':
+                raise OSError('disk full')
+            return original(source, target, record)
+        with patch.object(location, 'copy_file', side_effect=fail), contextlib.redirect_stdout(io.StringIO()), \
+             contextlib.redirect_stderr(io.StringIO()), self.assertRaises(OSError):
+            location.copy_package(self.source, self.destination, overwrite=True)
+        self.assertEqual(location.inventory(self.destination), (before, directories))
+        self.assertTrue(list((self.destination / '.backups').glob('install-*/SHA256SUMS')))
+        self.assertFalse((self.destination / 'aaa-new.txt').exists())
+
+    def test_backup_failure_or_type_conflict_never_overwrites_code(self):
+        self.existing_install()
+        original = location.copy_file
+        def bad_backup(source, target, record):
+            if '.backups' in target.parts:
+                raise OSError('backup failed')
+            return original(source, target, record)
+        with patch.object(location, 'copy_file', side_effect=bad_backup), contextlib.redirect_stdout(io.StringIO()), self.assertRaises(OSError):
+            location.copy_package(self.source, self.destination, overwrite=True)
+        self.assertEqual((self.destination / 'install.sh').read_text(), 'old installer')
+        (self.source / 'local-notes.txt').mkdir()
+        with self.assertRaisesRegex(ValueError, '类型冲突'):
+            location.copy_package(self.source, self.destination, overwrite=True)
+        self.assertEqual((self.destination / 'local-notes.txt').read_text(), 'retain unrelated notes')
 
     def test_noninteractive_configure_help_and_keep_do_not_copy(self):
         for arguments in ([], ['management', '--configure-only'], ['--help'], ['--keep-location']):

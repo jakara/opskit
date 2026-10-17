@@ -200,8 +200,9 @@ function Invoke-OpsKitLocation([string]$Entry, [System.Collections.IDictionary]$
         $arguments = @('--source', (Split-Path -Parent $Entry), '--entry', 'install.ps1', '--')
         if ($Parameters['InstallDir']) { $arguments += @('--install-dir', [string]$Parameters['InstallDir']) }
         if ($Parameters['KeepLocation']) { $arguments += '--keep-location' }
+        if ($Parameters['Overwrite']) { $arguments += '--overwrite' }
         foreach ($key in $Parameters.Keys) {
-            if ($key -in 'InstallDir', 'KeepLocation') { continue }
+            if ($key -in 'InstallDir', 'KeepLocation', 'Overwrite') { continue }
             $value = $Parameters[$key]
             if ($value -is [System.Management.Automation.SwitchParameter]) {
                 if ($value.IsPresent) { $arguments += "-$key" }

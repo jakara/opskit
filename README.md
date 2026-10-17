@@ -64,17 +64,21 @@ Hub 不再区分开发模式和生产模式。完整管理中心会预置运维�
 | macOS | `~/Applications/opskit`、`~/opskit`、`/usr/local/share/opskit` |
 | Windows | `%LOCALAPPDATA%\opskit`、`%USERPROFILE%\opskit`、`%ProgramData%\opskit` |
 
-也可保留当前位置、自定义目录或取消。选择新目录后复制完整安装包，校验文件内容及脚本权限，再从新位置重新进入安装向导；原包保留，配置和后续启动路径以新位置为准。已有非空目标、父子嵌套目录、链接和权限不足会立即提示并允许重选，不覆盖现有配置。系统共享目录需要写入权限。只复制单个模块时，推荐目录名分别使用 `opskit-management`、`opskit-collector`。
+安装包已在本系统推荐位置时直接原地继续，不再询问搬移；完整包内的管理端、采集端也沿用这个位置。其他位置可选“就在当前目录安装”、自定义目录或取消，也可直接输入安装目录的绝对路径。显式指定 `--install-dir` / `-InstallDir` 时采用指定位置。复制后校验文件内容及脚本权限，再从新位置重新进入安装向导；原包保留，配置和后续启动路径以新位置为准。父子嵌套目录、链接和权限不足会立即提示并允许重选。系统共享目录需要写入权限。只复制单个模块时，推荐目录名分别使用 `opskit-management`、`opskit-collector`。
 
-复制包含普通文件、离线镜像和文档，排除 Git 元数据、根目录 `dist/`、虚拟环境及 Python 缓存。仅显示帮助、只生成配置或无交互输入时默认使用当前位置；需要复制时可显式指定目录。Linux/macOS 使用 `--install-dir`，Windows 使用 `-InstallDir`；`--keep-location` / `-KeepLocation` 明确保留原位置。完整气隙包沿用其现场运行目录，由现场入口自动复制 OpsKit，不重复询问位置。
+目标已有文件时，可确认覆盖：先将原文件备份到目标目录的 `.backups/install-时间/files/`，逐文件核验并生成 `SHA256SUMS`，通过后才替换程序文件。保留目标现有的 `.env`、`*.env`、工作台状态、数据、项目文档及未在新包出现的文件；新包中新增的文件正常复制。写入失败时恢复本次已修改的原文件，备份继续保留。类型冲突或备份失败会在覆盖前停止。备份、恢复路径会在终端显示。
+
+复制包含普通文件、离线镜像和文档，排除 Git 元数据、历史 `.backups/`、根目录 `dist/`、虚拟环境及 Python 缓存。仅显示帮助、只生成配置或无交互输入时默认使用当前位置；需要复制时可显式指定目录。Linux/macOS 使用 `--install-dir`，Windows 使用 `-InstallDir`；`--keep-location` / `-KeepLocation` 明确保留原位置。非交互覆盖还须显式传入 `--overwrite` / `-Overwrite`，并同样执行备份、保留配置。完整气隙包沿用其现场运行目录，由现场入口自动复制 OpsKit，不重复询问位置。
 
 ```bash
 ./install.sh management --install-dir "$HOME/opskit"
+./install.sh management --install-dir "$HOME/opskit" --overwrite
 ./install.sh collector --keep-location
 ```
 
 ```powershell
 .\install.cmd management -InstallDir "$env:LOCALAPPDATA\opskit"
+.\install.cmd management -InstallDir "$env:LOCALAPPDATA\opskit" -Overwrite
 .\install.cmd collector -KeepLocation
 ```
 

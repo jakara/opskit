@@ -32,6 +32,7 @@ class WindowsBootstrapTests(unittest.TestCase):
             text = (ROOT / name).read_text(encoding='utf-8-sig')
             self.assertIn("[string]$InstallDir = ''", text)
             self.assertIn('[switch]$KeepLocation', text)
+            self.assertIn('[switch]$Overwrite', text)
             location = text.index('Invoke-OpsKitLocation -Entry $PSCommandPath -Parameters $PSBoundParameters')
             next_step = text.index('if (-not $Module)') if name == 'install.ps1' else text.index('Invoke-OpsKitInstaller -Installer')
             self.assertLess(location, next_step)

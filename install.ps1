@@ -7,7 +7,8 @@ param(
     [switch]$Reconfigure,
     [ValidateRange(1, 65535)][int]$Port = 80,
     [string]$InstallDir = '',
-    [switch]$KeepLocation
+    [switch]$KeepLocation,
+    [switch]$Overwrite
 )
 
 $ErrorActionPreference = 'Stop'

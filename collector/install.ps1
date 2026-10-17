@@ -4,7 +4,8 @@ param(
     [switch]$Offline,
     [switch]$Reconfigure,
     [string]$InstallDir = '',
-    [switch]$KeepLocation
+    [switch]$KeepLocation,
+    [switch]$Overwrite
 )
 
 $ErrorActionPreference = 'Stop'

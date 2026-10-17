@@ -133,7 +133,7 @@ $env:PYTHONIOENCODING = 'previous-io'
 $parameters = @{
     Module = 'hub'; Port = 8081; InstallDir = 'C:\现场工具\Ops Kit';
     KeepLocation = [switch]$true; ConfigureOnly = [switch]$true;
-    Offline = [switch]$true; Reconfigure = [switch]$false
+    Offline = [switch]$true; Reconfigure = [switch]$false; Overwrite = [switch]$true
 }
 try {
     Invoke-OpsKitLocation -Entry 'C:\下载包\install.ps1' -Parameters $parameters
@@ -156,10 +156,11 @@ throw 'Original entry continued after relocated installer returned.'
         $childArgs = @($data.arguments[($separator + 1)..($data.arguments.Count - 1)])
         Assert-True (($childArgs -contains '--install-dir') -and ($childArgs -contains 'C:\现场工具\Ops Kit')) 'Unicode destination with spaces changed.'
         Assert-True ($childArgs -contains '--keep-location') 'KeepLocation not mapped after the separator.'
+        Assert-True ($childArgs -contains '--overwrite') 'Overwrite not mapped after the separator.'
         foreach ($value in @('-Module', 'hub', '-Port', '8081', '-ConfigureOnly', '-Offline')) {
             Assert-True ($childArgs -contains $value) "Original parameter lost: $value"
         }
-        Assert-True ($childArgs -notcontains '-Reconfigure' -and $childArgs -notcontains '-InstallDir' -and $childArgs -notcontains '-KeepLocation') 'False or consumed switches reached the relocated installer.'
+        Assert-True ($childArgs -notcontains '-Reconfigure' -and $childArgs -notcontains '-InstallDir' -and $childArgs -notcontains '-KeepLocation' -and $childArgs -notcontains '-Overwrite') 'False or consumed switches reached the relocated installer.'
         Assert-True ($data.utf8 -eq '1' -and $data.io -eq 'utf-8') 'Location helper did not use UTF-8.'
         $restored = Get-Content -LiteralPath ($capture + '.restored') -Raw | ConvertFrom-Json
         Assert-True ($restored.utf8 -eq 'previous-utf8' -and $restored.io -eq 'previous-io') 'Location helper leaked encoding changes.'
