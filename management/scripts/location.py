@@ -13,6 +13,15 @@ import sys
 IGNORED = {'.git', '__pycache__', '.DS_Store', '.venv', 'node_modules'}
 
 
+def linked(path):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    # Python 3.9 尚无 Path.is_junction；Windows 重解析点也不允许作为复制路径。
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, 'st_file_attributes', 0) & 0x400)
+
+
 def digest(path):
     result = hashlib.sha256()
     with path.open('rb') as stream:
@@ -48,7 +57,7 @@ def destination_path(source, value):
     for path in (raw, *raw.parents):
         # macOS 的系统别名；其余链接不作为安装目标，避免写到意外位置。
         system_alias = sys.platform == 'darwin' and path in (Path('/tmp'), Path('/var'))
-        if not system_alias and (path.is_symlink() or getattr(path, 'is_junction', lambda: False)()):
+        if not system_alias and linked(path):
             raise ValueError('安装目录不能经过软链接或目录联接：' + str(path))
     target = raw.resolve()
     if target == source:
@@ -67,7 +76,7 @@ def inventory(source):
         names[:] = sorted(name for name in names if name not in IGNORED and not (folder == source and name == 'dist'))
         for name in names:
             path = folder / name
-            if path.is_symlink() or getattr(path, 'is_junction', lambda: False)():
+            if linked(path):
                 raise ValueError('安装包含链接，停止复制：' + str(path.relative_to(source)))
             directories.append(path.relative_to(source))
         for name in sorted(filenames):
@@ -75,7 +84,7 @@ def inventory(source):
                 continue
             path = folder / name
             info = path.lstat()
-            if not stat.S_ISREG(info.st_mode):
+            if not stat.S_ISREG(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
                 raise ValueError('安装包含链接或特殊文件，停止复制：' + str(path.relative_to(source)))
             files[path.relative_to(source)] = (digest(path), info.st_size, stat.S_IMODE(info.st_mode))
     return files, directories

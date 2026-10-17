@@ -38,6 +38,12 @@ class LocationTests(unittest.TestCase):
     def test_both_modules_use_the_same_helper(self):
         self.assertEqual(HELPER.read_bytes(), (ROOT / 'collector/scripts/location.py').read_bytes())
 
+    def test_windows_reparse_points_are_detected_without_python312(self):
+        from types import SimpleNamespace
+        info = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_file_attributes=0x400)
+        with patch.object(Path, 'lstat', return_value=info):
+            self.assertTrue(location.linked(self.base / 'junction'))
+
     def test_recommendations_match_platform_and_standalone_package(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder)
