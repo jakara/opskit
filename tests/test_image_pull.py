@@ -85,7 +85,7 @@ class ImagePullTests(unittest.TestCase):
                     patch.object(common.subprocess, 'run', side_effect=docker), \
                     patch.dict(sys.modules, {'configure_proxy': SimpleNamespace(initialize=initialize),
                                              'check': SimpleNamespace(check=check)}), \
-                    patch.object(sys, 'argv', ['install.py']), patch.dict(os.environ, {}, clear=True):
+                    patch.object(sys, 'argv', ['install.py', '--reuse-config']), patch.dict(os.environ, {}, clear=True):
                 management.main()
             saved = common.load_env(root / '.env')
             self.assertEqual(saved['SPUG_IMAGE'], NEW_SPUG)
@@ -209,6 +209,7 @@ class ImagePullTests(unittest.TestCase):
             values = management.configure({}, interactive=False)
             with patch.object(management, 'ROOT', root), patch.object(management, 'configure', return_value=values), \
                     patch.object(management, 'docker_ready'), patch.object(management, 'run') as run, \
+                    patch.object(management, 'compose_start_command', return_value=['docker', 'compose', 'up', '-d']), \
                     patch.object(management, 'prepare_images', side_effect=RuntimeError('镜像缺失')), \
                     patch.object(management, 'start_discovery') as discovery, patch.object(sys, 'argv', ['install.py']):
                 with self.assertRaisesRegex(RuntimeError, '镜像缺失'):

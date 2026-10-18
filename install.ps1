@@ -5,6 +5,7 @@ param(
     [switch]$ConfigureOnly,
     [switch]$Offline,
     [switch]$Reconfigure,
+    [switch]$ReuseConfig,
     [ValidateRange(1, 65535)][int]$Port = 80,
     [string]$InstallDir = '',
     [switch]$KeepLocation,
@@ -25,7 +26,7 @@ try {
     }
     & $python -B "$PSScriptRoot/management/scripts/options.py" write $PSScriptRoot $Module
     if ($LASTEXITCODE -ne 0) { throw '无法保存安装模块。' }
-    $options = @{ ConfigureOnly = $ConfigureOnly; Offline = $Offline; Reconfigure = $Reconfigure }
+    $options = @{ ConfigureOnly = $ConfigureOnly; Offline = $Offline; Reconfigure = $Reconfigure; ReuseConfig = $ReuseConfig }
     if ($PSBoundParameters.ContainsKey('Port') -and $Module -notin @('2', 'collector')) { $options['Port'] = $Port }
     switch ($Module) {
         { $_ -in '1', 'management', 'production' } {

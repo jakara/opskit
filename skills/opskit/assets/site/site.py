@@ -274,7 +274,7 @@ class Runner:
             settings.update(env)
         if interactive:
             with self.log.open('a', encoding='utf-8') as stream:
-                stream.write('启动本机中文配置向导，凭据由终端输入且不记录。\n')
+                stream.write('执行本机向导或安装；终端输入及登录凭据回显不写入此日志。\n')
             result = subprocess.run(args, cwd=cwd or self.directory, env=settings, stdin=stdin)
         elif capture:
             result = subprocess.run(args, cwd=cwd or self.directory, env=settings,
@@ -765,10 +765,11 @@ def builtin(manifest, role, args, directory, runner, records):
     if role == 'hub' and configuration.exists():
         command += ['--port', read_env(configuration).get('OPSKIT_HTTP_PORT', '80')]
     # 先完成现有中文向导；非交互缺值在导入镜像/启动前退出，不会等待无意义输入。
-    runner.run(command + ['--configure-only'], cwd=working, stdin=subprocess.DEVNULL if args.non_interactive else None,
+    runner.run(command + ['--configure-only'] + (['--reuse-config'] if args.non_interactive else []), cwd=working, stdin=subprocess.DEVNULL if args.non_interactive else None,
                interactive=not args.non_interactive)
     import_images(runner, records)
-    runner.run(command, cwd=working, stdin=subprocess.DEVNULL if args.non_interactive else None)
+    runner.run(command + ['--reuse-config'], cwd=working, stdin=subprocess.DEVNULL if args.non_interactive else None,
+               interactive=True)
     check_builtin(runner, role, working, configuration)
     return {'checks_passed': True}
 

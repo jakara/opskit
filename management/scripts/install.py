@@ -11,7 +11,7 @@ import socket
 import subprocess
 import sys
 
-from common import ROOT, ask, docker_ready, env_text, host, image_defaults, ipv4, load_env, password, port, powershell, prepare_images, run, save
+from common import ROOT, ask, choose_configuration, compose_start_command, docker_ready, env_text, host, image_defaults, ipv4, load_env, password, port, powershell, prepare_images, run, save
 
 IMAGES = image_defaults({
     'WORKBENCH_IMAGE': 'm.daocloud.io/docker.io/library/python:3.12-alpine',
@@ -133,6 +133,20 @@ def public_url(v):
     return f"{v['OPS_PUBLIC_SCHEME']}://{v['OPS_PUBLIC_HOST']}{suffix}"
 
 
+def show_credentials(v, config, hub_only=False):
+    print('\n登录信息（本次安装完成后回显一次，请妥善保存）：')
+    print(f'NPM 管理员：{v["NPM_ADMIN_EMAIL"]}  密码：{v["NPM_ADMIN_PASSWORD"]}')
+    if not hub_only:
+        print(f'Spug 初始管理员：{v["SPUG_ADMIN_USER"]}  密码：{v["SPUG_ADMIN_PASSWORD"]}')
+        print(f'DBX 登录密码：{v["DBX_PASSWORD"]}')
+        print(f'运维入口：{v["OPS_ADMIN_USER"]}  密码：{v["OPS_ADMIN_PASSWORD"]}')
+        print(f'日志写入：{v["LOG_AGENT_USER"]}  密码：{v["LOG_AGENT_PASSWORD"]}')
+    print(f'凭据保存位置：{config}（已限制文件访问权限）')
+    if not hub_only:
+        print('Spug 数据库内部密码也保存在此文件，不单独回显。')
+    print('以上为配置中记录的凭据；若已在应用内修改账户或密码，以应用实际设置为准。')
+
+
 def write_outputs(v):
     save(ROOT / '.env', env_text(v))
     connection = {
@@ -219,11 +233,15 @@ def start_discovery():
     print('宿主机入口发现已在后台启动；当前环境未配置系统自启，主机重启后需重跑安装脚本。')
 
 
-def install_hub(http_port, configure_only=False, offline=False):
+def install_hub(http_port, configure_only=False, offline=False, reconfigure=False, reuse=False):
     config = ROOT / '.workbench/hub.env'
     previous = load_env(config)
+    reconfigure = choose_configuration(config, reconfigure, reuse)
     http_port = int(previous.get('OPSKIT_HTTP_PORT', '80')) if http_port is None else http_port
     v = configure(previous, interactive=False)
+    if reconfigure:
+        http_port = int(ask('Hub HTTP 端口', str(http_port), port))
+        v['NPM_ADMIN_PORT'] = ask('NPM 管理界面端口', v['NPM_ADMIN_PORT'], lambda s: port(s) and s != str(http_port))
     v.update(HUB_ONLY='true', OPS_PUBLIC_HOST='localhost', OPS_PUBLIC_SCHEME='http',
              OPS_PUBLIC_PORT=str(http_port), OPSKIT_HTTP_PORT=str(http_port),
              OPSKIT_BIND_IP='127.0.0.1', NPM_BIND_IP='127.0.0.1')
@@ -248,6 +266,7 @@ def install_hub(http_port, configure_only=False, offline=False):
     docker_ready()
     command = ['docker', 'compose', '--env-file', str(config), '-f', 'hub.compose.yaml']
     run(command + ['config', '--quiet'])
+    startup = compose_start_command(v, command, ['hub.compose.yaml'])
     # 拒绝挤占其他程序的端口；重跑时允许复用本项目自己的监听。
     owned = run(command + ['ps', '-q', 'proxy-manager'], capture_output=True, text=True).stdout.strip()
     if not owned:
@@ -259,12 +278,13 @@ def install_hub(http_port, configure_only=False, offline=False):
                 raise RuntimeError(f'本机 {value} 端口已被占用，请调整配置或停止占用程序后重跑') from None
     prepare_images(v, config, command, offline)
     start_discovery()
-    run(command + ['up', '-d', '--pull', 'never'])
+    run(startup)
     from configure_proxy import initialize
     initialize(v)
     suffix = '' if http_port == 80 else ':' + str(http_port)
     print(f'应用工作台已启动：http://127.0.0.1{suffix}/')
     print(f'NPM 管理界面：http://127.0.0.1:{v["NPM_ADMIN_PORT"]}；登录信息保存于 {config}')
+    show_credentials(v, config, hub_only=True)
 
 
 def main():
@@ -274,13 +294,15 @@ def main():
     parser.add_argument('--port', type=int, help='NPM 的本机 HTTP 端口，沿用已保存值，新装默认 80')
     parser.add_argument('--configure-only', action='store_true', help='只生成配置，不启动容器')
     parser.add_argument('--offline', action='store_true', help='仅使用已导入的本地镜像')
-    parser.add_argument('--reconfigure', action='store_true', help='重新引导网络等配置，保留已有凭据')
+    configuration = parser.add_mutually_exclusive_group()
+    configuration.add_argument('--reconfigure', action='store_true', help='重新引导网络等配置，保留已有凭据')
+    configuration.add_argument('--reuse-config', action='store_true', help='明确复用已有配置，跳过选择菜单（适用于自动化）')
     args = parser.parse_args()
     os.umask(0o077)
     if args.hub_only or args.mode == 'development':
         if args.port is not None and not 1 <= args.port <= 65535:
             parser.error('Hub 端口须为 1～65535')
-        install_hub(args.port, args.configure_only, args.offline)
+        install_hub(args.port, args.configure_only, args.offline, args.reconfigure, args.reuse_config)
         return
     source = ROOT / '.env'
     if not source.exists() and (ROOT.parent / '.env').exists():
@@ -292,20 +314,22 @@ def main():
     draft = load_env(progress)
     if draft:
         print('发现未完成配置，已将上次确认的选择作为默认值；已有密码继续保留。')
-    v = configure(existing, args.reconfigure, draft=draft,
+    reconfigure = choose_configuration(source, args.reconfigure, args.reuse_config, draft)
+    v = configure(existing, reconfigure, draft=draft,
                   checkpoint=lambda values: save(progress, env_text(values)))
     write_outputs(v)
     progress.unlink(missing_ok=True)
-    print(f'配置已保存：{ROOT / ".env"}（已限制文件访问权限，密码不显示在终端）')
+    print(f'配置已保存：{ROOT / ".env"}（已限制文件访问权限；服务启动并检查成功后回显登录信息）')
     print('已生成 collector.env（只含采集连接凭据）及 outer-nginx.conf.example。')
     if args.configure_only:
         print('配置阶段完成。准备好 Docker 后重新运行 ./install.sh 即可继续。')
         return
     docker_ready()
     run(['docker', 'compose', 'config', '--quiet'])
+    startup = compose_start_command(v)
     prepare_images(v, ROOT / '.env', offline=args.offline)
     start_discovery()
-    run(['docker', 'compose', 'up', '-d', '--pull', 'never'])
+    run(startup)
     from configure_proxy import initialize
     initialize(v)
     from check import check
@@ -314,6 +338,7 @@ def main():
     print(f'NPM 管理界面：http://{v["NPM_BIND_IP"]}:{v["NPM_ADMIN_PORT"]}')
     print('外层 Nginx、DNS 与防火墙需由其管理员按生成的示例配置。')
     print('下一步：复制 collector/ 到每台业务机，并只传递 collector.env 作为其 .env。')
+    show_credentials(v, ROOT / '.env')
 
 
 if __name__ == '__main__':

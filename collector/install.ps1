@@ -3,6 +3,7 @@ param(
     [switch]$ConfigureOnly,
     [switch]$Offline,
     [switch]$Reconfigure,
+    [switch]$ReuseConfig,
     [string]$InstallDir = '',
     [switch]$KeepLocation,
     [switch]$Overwrite
@@ -16,6 +17,7 @@ try {
     if ($ConfigureOnly) { $arguments += '--configure-only' }
     if ($Offline) { $arguments += '--offline' }
     if ($Reconfigure) { $arguments += '--reconfigure' }
+    if ($ReuseConfig) { $arguments += '--reuse-config' }
     Invoke-OpsKitInstaller -Installer "$PSScriptRoot/scripts/install.py" -Arguments $arguments -ConfigureOnly:$ConfigureOnly -Offline:$Offline
     exit 0
 } catch {

@@ -13,7 +13,7 @@ import time
 from urllib.error import HTTPError
 from urllib.request import Request, build_opener, ProxyHandler
 
-from common import ROOT, ask, docker_ready, env_text, host, image_defaults, load_env, password, port, prepare_images, run, save
+from common import ROOT, ask, choose_configuration, compose_start_command, docker_ready, env_text, host, image_defaults, load_env, password, port, prepare_images, run, save
 
 IMAGES = image_defaults({'FLUENTBIT_IMAGE': 'm.daocloud.io/docker.io/fluent/fluent-bit:5.1.4'})
 
@@ -103,14 +103,17 @@ def main():
     parser = argparse.ArgumentParser(description='OpsKit Fluent Bit 采集端安装向导')
     parser.add_argument('--configure-only', action='store_true', help='只生成配置，不连接管理端或启动容器')
     parser.add_argument('--offline', action='store_true', help='使用已导入的本地镜像')
-    parser.add_argument('--reconfigure', action='store_true', help='重新引导连接地址、标签和日志路径')
+    configuration = parser.add_mutually_exclusive_group()
+    configuration.add_argument('--reconfigure', action='store_true', help='重新引导连接地址、标签和日志路径')
+    configuration.add_argument('--reuse-config', action='store_true', help='明确复用已有配置，跳过选择菜单（适用于自动化）')
     args = parser.parse_args()
     os.umask(0o077)
     progress = ROOT / '.env.install-progress'
     draft = load_env(progress)
     if draft:
         print('发现未完成配置，已将上次确认的选择作为默认值；采集密码继续保留。')
-    v = configure(load_env(ROOT / '.env'), args.reconfigure, draft=draft,
+    reconfigure = choose_configuration(ROOT / '.env', args.reconfigure, args.reuse_config, draft)
+    v = configure(load_env(ROOT / '.env'), reconfigure, draft=draft,
                   checkpoint=lambda values: save(progress, env_text(values)))
     save(ROOT / '.env', env_text(v))
     progress.unlink(missing_ok=True)
@@ -120,9 +123,10 @@ def main():
         return
     docker_ready()
     run(['docker', 'compose', 'config', '--quiet'])
+    startup = compose_start_command(v)
     check_connection(v)
     prepare_images(v, ROOT / '.env', offline=args.offline)
-    run(['docker', 'compose', 'up', '-d', '--pull', 'never'])
+    run(startup)
     time.sleep(3)
     state = run(['docker', 'compose', 'ps', '--all', '--format', 'json'], capture_output=True, text=True).stdout
     import json

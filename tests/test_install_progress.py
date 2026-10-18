@@ -96,7 +96,7 @@ class InstallProgressTests(unittest.TestCase):
                     'OPS_VHOST': 'ops.internal', 'LOG_AGENT_USER': 'logagent', 'LOG_AGENT_PASSWORD': 'secret_password_1234'}
         (root / '.env').write_text(common.env_text(original))
         before = (root / '.env').read_bytes()
-        first = self.run_install('collector', '\n' * 4 + 'customer-vm\nmy-project\nmy-service\nstaging\n\n')
+        first = self.run_install('collector', '\n' * 4 + 'customer-vm\nmy-project\nmy-service\nstaging\n\n', '--reuse-config')
         self.assertEqual(first.returncode, 1)
         self.assertEqual((root / '.env').read_bytes(), before)
         self.assertEqual(common.load_env(root / '.env.install-progress')['APP_ID'], 'my-service')
@@ -122,9 +122,17 @@ class InstallProgressTests(unittest.TestCase):
 
     def test_hub_port_defaults_to_saved_value_and_explicit_port_wins(self):
         for flags, expected in ((('--port', '19090'), '19090'), ((), '19090'), (('--port', '19091'), '19091')):
-            result = self.run_install('management', '', '--hub-only', *flags)
+            result = self.run_install('management', '', '--hub-only', '--reuse-config', *flags)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(common.load_env(self.root / 'management/.workbench/hub.env')['OPSKIT_HTTP_PORT'], expected)
+        path = self.root / 'management/.workbench/hub.env'
+        password = common.load_env(path)['NPM_ADMIN_PASSWORD']
+        reconfigured = self.run_install('management', '2\n19092\n8182\n', '--hub-only')
+        self.assertEqual(reconfigured.returncode, 0, reconfigured.stderr)
+        self.assertEqual(common.load_env(path)['OPSKIT_HTTP_PORT'], '19092')
+        self.assertEqual(common.load_env(path)['NPM_ADMIN_PORT'], '8182')
+        self.assertEqual(common.load_env(path)['NPM_ADMIN_PASSWORD'], password)
+        self.assertNotIn(password, reconfigured.stdout + reconfigured.stderr)
 
     def test_location_uses_last_directory_and_explicit_choices_take_priority(self):
         source = self.root

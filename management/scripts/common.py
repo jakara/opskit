@@ -154,6 +154,44 @@ def ask(label, default, validator, secret=False):
         print('输入无效，请按提示重新填写。')
 
 
+def choose_configuration(path, reconfigure=False, reuse=False, draft=None):
+    if reconfigure or reuse or draft or not path.exists():
+        return reconfigure
+    print(f'\n发现已有配置：{path}\n  1) 复用已有配置\n  2) 重新配置（保留已有密码和数据）')
+    return ask('请选择配置方式', '1', lambda s: s in ('1', '2')) == '2'
+
+
+def compose_start_command(values, command=None, files=None):
+    """重建前核对项目归属，避免同名项目覆盖另一安装目录。"""
+    command = command or ['docker', 'compose']
+    files = files or os.environ.get('COMPOSE_FILE', values.get('COMPOSE_FILE', 'compose.yaml')).split(os.pathsep)
+    normalize = lambda path: os.path.normcase(os.path.realpath(path))
+    expected = {normalize(ROOT / file) for file in files}
+    ids = run(command + ['ps', '--all', '--quiet'], capture_output=True, text=True).stdout.split()
+    restarting = False
+    if ids:
+        template = '{"Labels":{{json .Config.Labels}},"Running":{{json .State.Running}}}'
+        output = run(['docker', 'inspect', '--format', template, *ids], capture_output=True, text=True).stdout
+        containers = [json.loads(line) for line in output.splitlines() if line.strip()]
+        if len(containers) != len(ids):
+            raise RuntimeError('无法完整确认已有容器归属，停止更新；请检查 Docker 状态后重试。')
+        for container in containers:
+            labels = container.get('Labels') or {}
+            directory = labels.get('com.docker.compose.project.working_dir', '')
+            actual = {normalize(file) for file in labels.get('com.docker.compose.project.config_files', '').split(',') if file}
+            primary, legacy = normalize(ROOT / 'compose.yaml'), normalize(ROOT / 'legacy.compose.yaml')
+            # 旧管理端升级时新增 8080 兼容覆盖文件，仍属于同一完整管理端。
+            compatible = actual == expected or (expected == {primary, legacy} and actual == {primary})
+            if not directory or normalize(directory) != normalize(ROOT) or not compatible:
+                raise RuntimeError('同名 Compose 项目包含其他目录或安装范围的容器，已停止更新；请核对 COMPOSE_PROJECT_NAME。')
+            restarting = restarting or bool(container.get('Running'))
+    startup = command + ['up', '-d', '--pull', 'never']
+    if restarting:
+        print('检测到本安装目录的运行中容器；镜像准备完成后将重建并重启服务，保留持久化数据。')
+        startup.append('--force-recreate')
+    return startup
+
+
 def host(value):
     return bool(re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?', value))
 

@@ -108,7 +108,7 @@ class SkillDistributionTests(unittest.TestCase):
             values = common.load_env(destination / '.env')
             self.assertEqual({key: values[key] for key in keys}, images)
             self.assertNotIn(values['SPUG_DB_PASSWORD'], result.stdout + result.stderr)
-            repeated = subprocess.run([str(destination / 'install.sh'), '--configure-only'],
+            repeated = subprocess.run([str(destination / 'install.sh'), '--configure-only', '--reuse-config'],
                                       input='', text=True, capture_output=True)
             self.assertEqual(repeated.returncode, 0, repeated.stderr)
             self.assertEqual(values, common.load_env(destination / '.env'))

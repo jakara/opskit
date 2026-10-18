@@ -313,9 +313,11 @@ class RuntimeTests(unittest.TestCase):
         self.manifest['opskit_images'] = {}
         args = argparse.Namespace(action='install', non_interactive=True, env_file=str(self.env))
         runner = FakeRunner(directory, 'isolated-management', directory / 'install.log')
-        with patch.object(site, 'BUNDLE', self.root), patch.object(runner, 'run', return_value=''), \
+        with patch.object(site, 'BUNDLE', self.root), patch.object(runner, 'run', return_value='') as run, \
                 patch.object(site, 'check_builtin'), patch.object(site, 'import_images'):
             site.builtin(self.manifest, 'management', args, directory, runner, [])
+            self.assertIn('--reuse-config', run.call_args.args[0])
+            self.assertTrue(run.call_args.kwargs['interactive'])
             config = directory / 'opskit/management/.env'
             original = config.read_bytes()
             site.builtin(self.manifest, 'management', args, directory, runner, [])

@@ -109,12 +109,22 @@ class InstallerTests(unittest.TestCase):
             self.assertNotIn('NPM_ADMIN_PASSWORD', connection)
             self.assertNotIn('SPUG_DB_PASSWORD', connection)
             before = (dest / '.env').read_bytes()
-            second = subprocess.run([str(dest / 'install.sh'), '--configure-only'], input='', text=True, capture_output=True)
+            second = subprocess.run([str(dest / 'install.sh'), '--configure-only'], input='\n', text=True, capture_output=True)
             self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn('复用已有配置', second.stdout)
+            self.assertIn('重新配置', second.stdout)
             self.assertEqual(before, (dest / '.env').read_bytes())
             third = subprocess.run([str(dest / 'install.sh'), '--configure-only', '--reconfigure'], input='\n' * 20, text=True, capture_output=True)
             self.assertEqual(third.returncode, 0, third.stderr)
             self.assertEqual(secrets, common.load_env(dest / '.env'))
+            fourth = subprocess.run([str(dest / 'install.sh'), '--configure-only'],
+                                    input='2\nchanged.internal\n' + '\n' * 25, text=True, capture_output=True)
+            self.assertEqual(fourth.returncode, 0, fourth.stderr)
+            updated = common.load_env(dest / '.env')
+            self.assertEqual(updated['OPS_PUBLIC_HOST'], 'changed.internal')
+            for key in management.PASSWORD_KEYS:
+                self.assertEqual(updated[key], secrets[key])
+                self.assertNotIn(updated[key], fourth.stdout + fourth.stderr)
 
     def test_management_reprompts_conflicting_log_username_before_passwords(self):
         for reconfigure in (False, True):
@@ -151,13 +161,13 @@ class InstallerTests(unittest.TestCase):
                       'OPS_SCHEME': 'http', 'LOG_AGENT_USER': 'logagent', 'LOG_AGENT_PASSWORD': 'a1' * 24}
             (dest / '.env').write_text(common.env_text(values))
             answers = '\n' * 9 + str(logs) + '\n\n\n'
-            result = subprocess.run([str(dest / 'install.sh'), '--configure-only'], input=answers, text=True, capture_output=True)
+            result = subprocess.run([str(dest / 'install.sh'), '--configure-only', '--reuse-config'], input=answers, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             data = common.load_env(dest / '.env')
             self.assertEqual(data['HOST_LOG_DIR'], str(logs))
             self.assertEqual(data['OPS_TLS'], 'Off')
             self.assertEqual(data['LOG_AGENT_PASSWORD'], values['LOG_AGENT_PASSWORD'])
-            repeat = subprocess.run([str(dest / 'install.sh'), '--configure-only'], input='', text=True, capture_output=True)
+            repeat = subprocess.run([str(dest / 'install.sh'), '--configure-only'], input='\n', text=True, capture_output=True)
             self.assertEqual(repeat.returncode, 0, repeat.stderr)
 
     def test_log_mount_and_labels_validation(self):

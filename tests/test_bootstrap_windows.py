@@ -40,12 +40,16 @@ class WindowsBootstrapTests(unittest.TestCase):
     def test_windows_switches_reach_existing_python_installers(self):
         for module in ['management', 'collector']:
             text = (ROOT / module / 'install.ps1').read_text(encoding='utf-8-sig')
-            for flag in ['--configure-only', '--offline', '--reconfigure']:
+            for flag in ['--configure-only', '--offline', '--reconfigure', '--reuse-config']:
                 self.assertIn(flag, text)
+            self.assertIn('[switch]$ReuseConfig', text)
             self.assertIn('Invoke-OpsKitInstaller', text)
         management = (ROOT / 'management/install.ps1').read_text(encoding='utf-8-sig')
         self.assertIn("$arguments += '--hub-only'", management)
         self.assertIn("$PSBoundParameters.ContainsKey('Port')", management)
+        root = (ROOT / 'install.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('[switch]$ReuseConfig', root)
+        self.assertIn('ReuseConfig = $ReuseConfig', root)
 
 
 if __name__ == '__main__':
