@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""在 Spug 容器内从 stdin 接收安装 JSON，仅初始化登记和只读健康检查。"""
+"""在 Spug 容器内登记服务、只读健康检查和受限宿主服务的手动操作。"""
 import json
 import os
 from pathlib import Path
@@ -25,6 +25,33 @@ SERVICES = (
     ('fluentbit', '管理端日志采集', 'internal-logs', 'http://internal-logs:2020/api/v1/health',
      '管理端内部采集', '1', ''),
 )
+CONTROL_SERVICES = (('dbx', 'DBX', 'DBX_IMAGE'),
+                    ('victorialogs', 'VictoriaLogs', 'VICTORIALOGS_IMAGE'))
+CONTROL_ACTIONS = (('start', '启动'), ('stop', '停止'), ('restart', '重启'), ('upgrade', '升级'))
+CONTROL_COMMAND = '''import os
+import subprocess
+import sys
+
+action, service, app_id, environment_id = %r
+command = [sys.executable, '/opt/opskit/control_client.py', action, service]
+try:
+    if action == 'upgrade':
+        os.chdir('/data/spug/spug_api')
+        sys.path.insert(0, '/data/spug/spug_api')
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'spug.settings')
+        import django
+        django.setup()
+        from apps.config.models import Config
+        image = Config.objects.get(type='app', o_id=app_id, env_id=environment_id, key='image').value
+        if not isinstance(image, str) or not image.strip():
+            raise ValueError('missing image')
+        command.extend(['--image', image])
+    result = subprocess.run(command, timeout=3500)
+except Exception:
+    print('OpsKit 服务操作失败；请检查控制通道和配置中心的 image 配置。', file=sys.stderr)
+    sys.exit(1)
+sys.exit(result.returncode)
+'''
 HEALTH_COMMAND = '''import json
 import os
 import socket
@@ -119,7 +146,9 @@ def backup_records(runtime, folder):
     related_environments = runtime.Environment.objects.filter(id__in=[row.env_id for row in configs])
     environments = list({row.id: row for row in [*environments, *related_environments]}.values())
     detections = matching(runtime.Detection, name__in=['OpsKit · ' + item[1] + ' 健康' for item in SERVICES])
-    tasks = matching(runtime.Task, name='OpsKit · 管理服务只读巡检')
+    task_names = ['OpsKit · 管理服务只读巡检'] + [
+        f'OpsKit · {name} {label}' for _, name, _ in CONTROL_SERVICES for _, label in CONTROL_ACTIONS]
+    tasks = matching(runtime.Task, name__in=task_names)
     histories = list(runtime.History.objects.filter(task_id__in=[row.id for row in tasks]))
     objects = [*environments, *apps, *services, *configs, *changes, *detections, *tasks, *histories]
     content = runtime.serializers.serialize('json', objects, ensure_ascii=False).encode('utf-8')
@@ -159,8 +188,8 @@ def bootstrap(context, runtime=None, backup_folder=BACKUPS):
         raise BootstrapError('Spug 初始化需要一个可确定的现有管理员；账户未作更改')
     actor = actors[0]
     runtime.redis.ping()
-    result = {'created': 0, 'preserved': 0, 'conflicts': [], 'monitors': [], 'tasks': [],
-              'scope': 'container-network-health', 'backup': backup_records(runtime, backup_folder)}
+    result = {'created': 0, 'preserved': 0, 'conflicts': [], 'monitors': [], 'tasks': [], 'control_tasks': [],
+              'scope': 'container-network-health-and-service-control', 'backup': backup_records(runtime, backup_folder)}
     notifications = []
 
     def ensure(model, key, lookup, defaults):
@@ -174,7 +203,7 @@ def bootstrap(context, runtime=None, backup_folder=BACKUPS):
         result['created'] += 1
         return model.objects.create(**lookup, **defaults), True
 
-    def named(model, key, name, defaults):
+    def named(model, key, name, defaults, description='仅登记及容器网络健康，无宿主机启停权限'):
         marker = f'{MARKER} {key}'
         owned = list(model.objects.filter(desc__startswith=marker + ' '))
         if len(owned) == 1:
@@ -184,7 +213,7 @@ def bootstrap(context, runtime=None, backup_folder=BACKUPS):
             result['conflicts'].append(key)
             return None
         result['created'] += 1
-        return model.objects.create(name=name, desc=marker + ' 仅登记及容器网络健康，无宿主机启停权限',
+        return model.objects.create(name=name, desc=marker + ' ' + description,
                                     created_by=actor, **defaults)
 
     with runtime.transaction.atomic():
@@ -195,23 +224,39 @@ def bootstrap(context, runtime=None, backup_folder=BACKUPS):
                 if runtime.Service.objects.filter(key='opskit_' + key).exists():
                     result['conflicts'].append(key)
                     continue
+                controlled = key in {item[0] for item in CONTROL_SERVICES}
+                capability = ('登记、HTTP/TCP健康监控；巡检含MariaDB SELECT 1；'
+                              + ('通过手动任务启动/停止/重启/升级本安装服务' if controlled else '无宿主机启停/升级权限'))
                 app, _ = ensure(runtime.App, key, {'key': 'opskit_' + key},
                                 {'name': 'OpsKit · ' + name, 'created_by': actor,
-                                 'desc': MARKER + ' 仅登记与健康检查，未配置发布或宿主机控制'})
+                                 'desc': MARKER + ' ' + capability})
                 if not app:
                     continue
+                if controlled and app.desc == MARKER + ' 仅登记与健康检查，未配置发布或宿主机控制':
+                    app.desc = MARKER + ' ' + capability
+                    app.save(update_fields=['desc'])
                 values = {'compose_service': service, 'internal_endpoint': target + (':' + port if kind == '2' else ''),
                           'entry': base_url.rstrip('/') + entry if entry.startswith('/') else entry,
-                          'capability': '登记、HTTP/TCP健康监控；巡检含MariaDB SELECT 1；无宿主机启停/升级权限'}
+                          'capability': capability}
+                if controlled:
+                    image_key = next(item[2] for item in CONTROL_SERVICES if item[0] == key)
+                    values['image'] = context.get(image_key, os.environ.get(image_key, ''))
                 for config_key, value in values.items():
                     config, created = ensure(runtime.Config, key + '.' + config_key,
                                              {'type': 'app', 'o_id': app.id, 'env_id': environment.id, 'key': config_key},
                                              {'value': value, 'desc': MARKER,
                                               'updated_at': runtime.now(), 'updated_by': actor})
-                    if created:
+                    old_value, action = None, '1' if created else None
+                    if (config and not created and controlled and config_key == 'capability' and
+                            config.value == '登记、HTTP/TCP健康监控；巡检含MariaDB SELECT 1；无宿主机启停/升级权限'):
+                        old_value, action = config.value, '2'
+                        config.value, config.updated_at, config.updated_by = value, runtime.now(), actor
+                        config.save(update_fields=['value', 'updated_at', 'updated_by'])
+                    if action:
                         runtime.ConfigHistory.objects.create(
                             type='app', o_id=app.id, env_id=environment.id, key=config_key,
-                            value=value, desc=MARKER, action='1', updated_at=runtime.now(), updated_by=actor)
+                            value=value, old_value=old_value, desc=MARKER, action=action,
+                            updated_at=runtime.now(), updated_by=actor)
                 detection = named(runtime.Detection, 'monitor:' + key, 'OpsKit · ' + name + ' 健康',
                                   {'group': 'OpsKit 管理中心', 'type': kind, 'targets': json.dumps([target]),
                                    'extra': port, 'rate': 1, 'threshold': 3, 'quiet': 60,
@@ -223,6 +268,17 @@ def bootstrap(context, runtime=None, backup_folder=BACKUPS):
                         message.update({field: getattr(detection, field) for field in
                                         ('targets', 'extra', 'rate', 'type', 'threshold', 'quiet')})
                         notifications.append((runtime.settings.MONITOR_KEY, message))
+                if controlled:
+                    for action, label in CONTROL_ACTIONS:
+                        control = named(runtime.Task, f'task:control:{key}:{action}', f'OpsKit · {name} {label}',
+                                        {'type': 'OpsKit 手动服务操作', 'interpreter': 'python',
+                                         'command': CONTROL_COMMAND % ((action, key, app.id, environment.id),),
+                                         'targets': '["local"]', 'trigger': 'date',
+                                         'trigger_args': '2000-01-01 00:00:00', 'is_active': False,
+                                         'rst_notify': '{"mode":"0"}'},
+                                        '手动执行：更多→执行测试；不激活调度；升级读取配置中心 image，执行结果见历史记录')
+                        if control:
+                            result['control_tasks'].append(control.id)
             task = named(runtime.Task, 'task:health', 'OpsKit · 管理服务只读巡检',
                          {'type': 'OpsKit 只读巡检', 'interpreter': 'python', 'command': HEALTH_COMMAND,
                           'targets': '["local"]', 'trigger': 'interval', 'trigger_args': '60',

@@ -22,9 +22,13 @@
     "license": "AGPL-3.0",
     "source_sha256": "ba4dd6df61896b0d0c4fc961945da4046b715326840815599c7a4e66dac819a2",
     "patch": "spug-prefix.patch",
-    "patch_sha256": "6ab24eac64d0cbda3185ca029df77b1c54bf585f6c125bb8f3080f58e150ebca",
+    "patch_sha256": "6c1d341b4b7573311d1148f9f0586908699474921857041234a852c8dda9fd89",
     "lock": "spug-package-lock.json",
     "lock_sha256": "ebe0e4d429b83da920d8616ac6285d28ca6c9f5aa22697da3d3b8331ecdaa11e",
-    "upstream_index_sha256": "18530513a2e10af2e37624ab407a64c0516c5a57fc03309825cce37b04bdd66e"
+    "upstream_index_sha256": "18530513a2e10af2e37624ab407a64c0516c5a57fc03309825cce37b04bdd66e",
+    "runtime_sha256": {
+      "runtime/nginx.conf": "1c1e585243fc86352ed716cf0230342efa2c312fbe66bc507f937405f83d3243",
+      "runtime/start-api.sh": "0f9cb373ceef8754e83481714bba19e5f331a41c6bf39d2ad3d275b6435864e1"
+    }
   }
 }

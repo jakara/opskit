@@ -20,6 +20,13 @@ def verify_sources():
                 path = ROOT / item[path_key]
                 if not path.is_file() or sha256(path) != item[hash_key]:
                     raise RuntimeError(f'{name}: unsupported or modified {path_key}: {path}')
+        for relative, expected in item.get('runtime_sha256', {}).items():
+            path = ROOT / relative
+            if not path.is_file() or sha256(path) != expected:
+                raise RuntimeError(f'{name}: runtime checksum differs: {relative}')
+            deployed = ROOT.parent.parent / 'management' / 'spug' / path.name
+            if deployed.exists() and sha256(deployed) != expected:
+                raise RuntimeError(f'{name}: runtime deployment copy differs: {deployed}')
 
 
 def verify_static(output):

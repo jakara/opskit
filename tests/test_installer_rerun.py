@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 import sys
 import tempfile
@@ -96,6 +97,7 @@ class InstallerRerunTests(unittest.TestCase):
                 startup = ['docker', 'compose', 'up', '-d', '--pull', 'never', '--force-recreate']
                 with patch.object(management, 'ROOT', Path(folder)), patch.object(management, 'configure', return_value=values), \
                         patch.object(management, 'docker_ready'), patch.object(management, 'start_discovery'), \
+                        patch.object(management, 'installation_control', return_value=contextlib.nullcontext({})), \
                         patch.object(management, 'compose_start_command', return_value=startup), \
                         patch.object(management, 'prepare_images', side_effect=prepare), \
                         patch.object(management, 'run', side_effect=lambda args: events.append(args)), \
@@ -123,6 +125,134 @@ class InstallerRerunTests(unittest.TestCase):
         self.assertEqual(output.getvalue().count(values['NPM_ADMIN_PASSWORD']), 1)
         for key in management.PASSWORD_KEYS[1:]:
             self.assertNotIn(values[key], output.getvalue())
+
+
+class InstallationControlTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.values = management.configure({}, interactive=False)
+        self.env = self.root / '.env'
+        self.env.write_text(common.env_text(self.values))
+        self.directory = self.root / '.workbench/control'
+        self.recovery = self.directory / 'recovery/dbx.json'
+        self.recovery.parent.mkdir(parents=True)
+        self.recovery.write_text(json.dumps({'service': 'dbx', 'stage': 'applying'}))
+        self.alias = 'example/dbx:opskit-rollback-test'
+        self.events = []
+        self.unit = self.root / 'opskit-discovery.service'
+        self.unit.write_text('ExecStart=python3 ' + str(self.root / 'portal/discovery.py'))
+        self.controller = SimpleNamespace(directory=self.directory, recover=Mock(side_effect=self.recover))
+        self.uninstall = SimpleNamespace(
+            service_file=lambda root: self.unit,
+            admin=Mock(side_effect=lambda *args: self.events.append(('systemd-stop', args))),
+            stop_process=Mock(side_effect=lambda *args: self.events.append(('process-stop', args))))
+        self.patches = contextlib.ExitStack()
+        self.addCleanup(self.patches.close)
+        self.patches.enter_context(patch.object(management, 'ROOT', self.root))
+        self.patches.enter_context(patch.object(sys, 'platform', 'linux'))
+        self.patches.enter_context(patch.dict(sys.modules, {
+            'uninstall': self.uninstall,
+            'service_control': SimpleNamespace(Controller=lambda: self.controller, SERVICES={'dbx': 'DBX_IMAGE'})}))
+
+    def assert_locked(self):
+        with contextlib.closing(sqlite3.connect(self.directory / 'agent.lock', timeout=0)) as connection:
+            with self.assertRaises(sqlite3.OperationalError):
+                connection.execute('BEGIN EXCLUSIVE')
+
+    def assert_unlocked(self):
+        with contextlib.closing(sqlite3.connect(self.directory / 'agent.lock', timeout=0)) as connection:
+            connection.execute('BEGIN EXCLUSIVE')
+
+    def recover(self, state, check_health):
+        self.assertEqual(state['service'], 'dbx')
+        self.assertFalse(check_health)
+        self.assertEqual([event[0] for event in self.events], ['systemd-stop', 'process-stop'])
+        self.assert_locked()
+        self.events.append(('recover',))
+        self.env.write_text(common.env_text(dict(self.values, DBX_IMAGE=self.alias)))
+        self.recovery.unlink()
+
+    def test_recovery_stops_discovery_before_taking_lock_and_yields_exact_restored_image(self):
+        with management.installation_control() as recovered:
+            self.assertEqual(recovered, {'DBX_IMAGE': self.alias})
+            self.assert_locked()
+        self.assert_unlocked()
+        self.uninstall.admin.assert_called_once_with('systemctl', 'stop', self.unit.name)
+        self.uninstall.stop_process.assert_called_once_with(self.root, self.root / '.workbench/discovery', 'discovery.py')
+        self.assertEqual([event[0] for event in self.events], ['systemd-stop', 'process-stop', 'recover'])
+
+    def test_complete_startup_keeps_lock_through_proxy_then_restarts_discovery(self):
+        startup = ['docker', 'compose', 'up', '-d']
+        def locked_event(name, values=None):
+            self.assert_locked()
+            if values is not None:
+                self.assertEqual(values['DBX_IMAGE'], self.alias)
+            self.events.append((name,))
+        def run(args):
+            locked_event('compose-up' if args == startup else 'compose-config')
+        def start_discovery(**kwargs):
+            self.assertEqual(kwargs, {'control': True})
+            self.assert_unlocked()
+            self.events.append(('discovery-start',))
+        def initialize(values):
+            self.assert_unlocked()
+            self.assertEqual(self.events[-1][0], 'discovery-start')
+            self.assertEqual(values['DBX_IMAGE'], self.alias)
+            self.events.append(('self-management',))
+        with patch.object(management, 'choose_configuration', return_value=False), \
+                patch.object(management, 'configure', return_value=self.values.copy()), \
+                patch.object(management, 'docker_ready'), \
+                patch.object(management, 'write_outputs', side_effect=lambda values: locked_event('write-config', values)), \
+                patch.object(management, 'compose_start_command', side_effect=lambda values: locked_event('startup-plan', values) or startup), \
+                patch.object(management, 'prepare_images', side_effect=lambda values, *args, **kwargs: locked_event('prepare-images', values)), \
+                patch.object(management, 'run', side_effect=run), \
+                patch.object(management, 'start_discovery', side_effect=start_discovery), \
+                patch.object(management, 'show_credentials'), \
+                patch.dict(sys.modules, {
+                    'configure_proxy': SimpleNamespace(initialize=lambda values: locked_event('proxy', values)),
+                    'verify_ui': SimpleNamespace(verify=lambda values, **kwargs: locked_event('verify-ui', values)),
+                    'self_management': SimpleNamespace(initialize=initialize),
+                    'check': SimpleNamespace(check=lambda values: self.events.append(('check',)))}), \
+                patch.object(sys, 'argv', ['install.py', '--reuse-config']), contextlib.redirect_stdout(io.StringIO()):
+            management.main()
+        self.assertEqual([event[0] for event in self.events], [
+            'systemd-stop', 'process-stop', 'recover', 'write-config', 'compose-config', 'startup-plan',
+            'prepare-images', 'verify-ui', 'compose-up', 'proxy', 'discovery-start', 'self-management', 'check'])
+
+    def test_recovery_failure_blocks_configuration_startup_and_discovery_restart(self):
+        original = self.env.read_bytes()
+        self.controller.recover.side_effect = RuntimeError('recovery incomplete')
+        with patch.object(management, 'choose_configuration', return_value=False), \
+                patch.object(management, 'configure', return_value=self.values.copy()), \
+                patch.object(management, 'docker_ready'), patch.object(management, 'write_outputs') as write, \
+                patch.object(management, 'run') as run, patch.object(management, 'prepare_images') as prepare, \
+                patch.object(management, 'start_discovery') as discovery, \
+                patch.dict(sys.modules, {'configure_proxy': SimpleNamespace(initialize=Mock()),
+                                         'self_management': SimpleNamespace(initialize=Mock())}), \
+                patch.object(sys, 'argv', ['install.py', '--reuse-config']), contextlib.redirect_stdout(io.StringIO()), \
+                self.assertRaisesRegex(RuntimeError, 'recovery incomplete'):
+            management.main()
+        write.assert_not_called()
+        run.assert_not_called()
+        prepare.assert_not_called()
+        discovery.assert_not_called()
+        self.assertEqual(self.env.read_bytes(), original)
+        self.assertTrue(self.recovery.exists())
+        self.assert_unlocked()
+
+    def test_busy_control_lock_never_recovers_or_enters_installation_body(self):
+        entered = False
+        with contextlib.closing(sqlite3.connect(self.directory / 'agent.lock', timeout=0)) as operation:
+            operation.execute('BEGIN EXCLUSIVE')
+            with self.assertRaisesRegex(RuntimeError, '尚未结束'):
+                with management.installation_control():
+                    entered = True
+        self.assertFalse(entered)
+        self.controller.recover.assert_not_called()
+        self.assertTrue(self.recovery.exists())
 
 
 if __name__ == '__main__':

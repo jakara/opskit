@@ -34,12 +34,13 @@ class SelfManagementTests(unittest.TestCase):
             (root / 'scripts').mkdir()
             (root / 'scripts/spug_bootstrap.py').write_text('bootstrap')
             supervisor = '\n'.join(name + ' RUNNING' for name in ('spug-monitor', 'spug-scheduler', 'spug-worker'))
-            with patch.object(self_management, 'ROOT', root), patch.object(self_management.subprocess, 'run', return_value=SimpleNamespace(stdout=supervisor)), \
+            with patch.object(self_management, 'ROOT', root), patch.object(self_management.subprocess, 'run', return_value=SimpleNamespace(stdout=supervisor, returncode=0)), \
                     patch.object(self_management, 'spug_run', side_effect=[{'tasks': [7], 'conflicts': []}, {'healthy': False, 'services': [{'service': 'dbx', 'healthy': False}]}]), \
                     patch.object(self_management.time, 'monotonic', side_effect=[0, 0, 100]), \
                     patch.object(dbx_bootstrap, 'initialize') as initialize, contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(RuntimeError, '健康巡检'):
-                    self_management.initialize({'OPS_PUBLIC_SCHEME': 'http', 'OPS_PUBLIC_HOST': 'localhost', 'OPS_PUBLIC_PORT': '80', 'SPUG_ADMIN_USER': 'admin'})
+                    self_management.initialize({'OPS_PUBLIC_SCHEME': 'http', 'OPS_PUBLIC_HOST': 'localhost', 'OPS_PUBLIC_PORT': '80', 'SPUG_ADMIN_USER': 'admin',
+                                                'DBX_IMAGE': 'example/dbx:old', 'VICTORIALOGS_IMAGE': 'example/victoria-logs:old'})
                 initialize.assert_not_called()
                 self.assertFalse((root / '.workbench/self-management.json').exists())
 

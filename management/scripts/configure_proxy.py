@@ -61,6 +61,13 @@ location ^~ /spug/ {
     return npm + public_api + ('' if hub_only else spug) + '# END OpsKit 控制台入口\n'
 
 
+def dynamic_services(advanced):
+    for service, port in (('dbx', 4224), ('victorialogs', 9428)):
+        advanced = advanced.replace('proxy_pass http://%s:%s;' % (service, port),
+            'resolver 127.0.0.11 valid=5s ipv6=off;\n        set $opskit_%s %s:%s;\n        proxy_pass http://$opskit_%s;' % (service, service, port, service))
+    return advanced
+
+
 def upgrade_workbench(api, entry, reserved_domains=()):
     """迁移本包原始根入口和导航块，保留自定义代理配置。"""
     advanced = entry.get('advanced_config', '')
@@ -68,6 +75,10 @@ def upgrade_workbench(api, entry, reserved_domains=()):
     updated, count = re.subn(pattern, lambda _: HUB_ROUTE, advanced, count=1)
     changes = {}
     owned = '# OpsKit 子路径配置' in advanced or '# OpsKit 本机 Hub' in advanced or count
+    if owned:
+        updated = dynamic_services(updated)
+        if updated != advanced:
+            changes['advanced_config'] = updated
     if owned and '# BEGIN OpsKit 控制台入口' not in updated:
         if re.search(r'location\s+(?:(?:=|\^~)\s+)?/(?:npm|spug)(?:/|\s)', updated):
             raise RuntimeError('已有自定义 /npm 或 /spug 规则，请先在 NPM 中处理路径冲突；配置未覆盖')
@@ -157,6 +168,7 @@ location ^~ /logs/ {{
     proxy_pass http://victorialogs:9428;
 }}
 '''
+    advanced = dynamic_services(advanced)
     advanced += console_routes()
     local = v.get('HUB_ONLY') == 'true'
     if local:

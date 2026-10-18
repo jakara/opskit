@@ -71,9 +71,11 @@ cd opskit
 
 管理中心提供 HTTP，证书由外层 Nginx 管理。**外层代理或采集端在其他机器上时，HTTP 监听地址应填写管理机可达的内网 IPv4**；仅供同机访问的端口可保留 `127.0.0.1`。
 
-完整管理端安装时自动完成内置服务登记：Spug 展示各组件配置、健康监控及每分钟只读巡检；DBX 预置 Spug MariaDB 连接并验证查询；日志中心汇集内置组件的容器输出、NPM 访问日志和 Spug 文件日志。重跑保留人工编辑，初始化结果保存在 `management/.workbench/self-management.json`。
+完整管理端安装时自动完成内置服务登记：Spug 展示各组件配置、健康监控及每分钟只读巡检，并预置 DBX、VictoriaLogs 各四个启动、停止、重启和升级任务，共八个，默认停用。手动操作使用任务的“更多 → 执行测试”，结果查看“更多 → 历史记录”；不要激活这些任务的调度。DBX 预置 Spug MariaDB 连接并验证查询；日志中心汇集内置组件的容器输出、NPM 访问日志和 Spug 文件日志。重跑保留人工编辑，初始化结果保存在 `management/.workbench/self-management.json`。
 
-VictoriaLogs 使用 LogsQL，不是关系数据库，因此在日志界面查询，不向 DBX 添加无效的 SQL 连接。DBX 的预置连接默认启用可由管理员解锁的只读防误改。Spug 的内置登记和监控不授予宿主机启停、升级权限。
+升级前在 Spug 配置中心对应应用、`OpsKit 管理中心` 环境的 `image` 中设置目标，仅允许当前仓库的其他版本或 digest；气隙安装只使用已导入本机的镜像。宿主机发现进程通过 `--control` 消费仅 Spug 可写的请求卷，只允许操作本安装的 DBX、VictoriaLogs，网页容器不挂 Docker socket，也无需管理机 SSH。升级先停止目标服务写入并全量备份数据卷；失败回退到备份时点，试运行期间新增日志或变更可能丢失。回退未完成时锁定该服务操作，需在管理机重跑安装器恢复，不能直接重复操作。备份位于 `management/.backups/service-control/`，完整步骤见[内置服务自动纳管](management/README.md#内置服务自动纳管)。
+
+VictoriaLogs 使用 LogsQL，不是关系数据库，因此在日志界面查询，不向 DBX 添加无效的 SQL 连接。DBX 仅预置 Spug MariaDB 连接，默认启用可由管理员解锁的只读防误改；数据库查询健康检查也仅针对 Spug MariaDB。
 
 安装后还需完成三项业务接入：
 

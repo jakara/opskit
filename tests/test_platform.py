@@ -13,6 +13,7 @@ from test_installer import common, collector, management
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'management/portal'))
 import discovery
+import uninstall
 
 
 class PlatformTests(unittest.TestCase):
@@ -49,7 +50,7 @@ class PlatformTests(unittest.TestCase):
                 command = f'{root / "portal/discovery.py"} --output {folder / "state.json"}' if owned else 'other-app'
                 with patch.object(management, 'ROOT', root), patch.object(management.sys, 'platform', 'win32'), \
                         patch.object(management, 'run'), patch.object(management, 'save'), \
-                        patch.object(management, 'powershell', return_value=Mock(stdout=command)) as query, \
+                        patch.object(uninstall, 'powershell', side_effect=[Mock(stdout=command), Mock(stdout='')]) as query, \
                         patch.object(management.os, 'kill') as kill, \
                         patch.object(management.subprocess, 'Popen', return_value=Mock(pid=789)) as launch, \
                         contextlib.redirect_stdout(io.StringIO()):

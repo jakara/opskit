@@ -347,3 +347,29 @@
            <a className={styles.links} title={t('官网')} href="https://spug.cc" target="_blank"
               rel="noopener noreferrer">{t('官网')}</a>
            <a className={styles.links} title="Github" href="https://github.com/openspug/spug" target="_blank"
+--- a/spug_web/src/pages/schedule/Table.js
++++ b/spug_web/src/pages/schedule/Table.js
+@@ -124,8 +124,8 @@
+   handleTest = (text) => {
+     Modal.confirm({
+       title: t('操作确认'),
+-      content: t('立即以串行模式执行该任务（不影响调度规则，且不会触发失败通知，测试执行会有120秒的超时，真实调度执行无此限制）？'),
+-      onOk: () => http.post(`/api/schedule/${text.id}/`, null, {timeout: 120000})
++      content: t('立即以串行模式执行该任务（不影响调度规则，且不会触发失败通知，页面最多等待1小时）？'),
++      onOk: () => http.post(`/api/schedule/${text.id}/`, null, {timeout: 3600000})
+         .then(res => store.showInfo(text, res))
+     })
+   };
+--- a/spug_web/src/locales/en/schedule.js
++++ b/spug_web/src/locales/en/schedule.js
+@@ -22,8 +22,8 @@
+   '历史记录': 'History',
+   '确定要禁用任务【{}】?': 'Are you sure you want to disable task [{}]?',
+   '确定要激活任务【{}】?': 'Are you sure you want to activate task [{}]?',
+-  '立即以串行模式执行该任务（不影响调度规则，且不会触发失败通知，测试执行会有120秒的超时，真实调度执行无此限制）？':
+-    'Run this task now in serial mode? It does not affect the schedule and no failure notification will be sent. Test runs have a 120-second timeout, which does not apply to real scheduled runs.',
++  '立即以串行模式执行该任务（不影响调度规则，且不会触发失败通知，页面最多等待1小时）？':
++    'Run this task now in serial mode? It does not affect the schedule and no failure notification will be sent. This page waits up to 1 hour for the result.',
+ 
+   // Form wizard
+   '新建任务': 'New Task',

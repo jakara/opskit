@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """管理中心交互式安装向导。"""
 import argparse
+from contextlib import closing, contextmanager
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import secrets
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 
@@ -195,10 +198,12 @@ def hub_directory():
     return directory
 
 
-def start_discovery():
-    """宿主机只导出清单，网页容器不接触 Docker socket 或宿主机进程。"""
+def start_discovery(control=False):
+    """宿主机导出清单，并可选处理两个固定服务的请求。"""
     directory = ROOT / '.workbench/discovery'
     command = [sys.executable, '-u', str(ROOT / 'portal/discovery.py'), '--output', str(directory / 'state.json')]
+    if control:
+        command.append('--control')
     run(command + ['--once'])
     if sys.platform != 'win32' and os.geteuid() == 0 and Path('/run/systemd/system').exists() and shutil.which('systemctl'):
         service = 'opskit-discovery-' + hashlib.sha256(str(ROOT).encode()).hexdigest()[:8] + '.service'
@@ -207,7 +212,7 @@ def start_discovery():
         content = ('[Unit]\nDescription=OpsKit host service discovery\nAfter=docker.service network.target\n'
                    '[Service]\nType=simple\nExecStart=' + ' '.join(map(quote, command)) +
                    '\nEnvironment=' + quote('PATH=' + os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin')) +
-                   '\nRestart=always\nRestartSec=5\nUMask=0077\n[Install]\nWantedBy=multi-user.target\n')
+                   '\nRestart=always\nRestartSec=5\nTimeoutStopSec=3600\nUMask=0077\n[Install]\nWantedBy=multi-user.target\n')
         save(Path('/etc/systemd/system') / service, content, private=False)
         run(['systemctl', 'daemon-reload'])
         run(['systemctl', 'enable', service])
@@ -217,25 +222,39 @@ def start_discovery():
         return
     pidfile = directory / 'discovery.pid'
     if pidfile.exists():
-        try:
-            pid = int(pidfile.read_text(encoding='utf-8'))
-            if pid <= 0:
-                raise ValueError('无效 PID')
-            if sys.platform == 'win32':
-                existing = powershell("[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); "
-                                      f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}').CommandLine",
-                                      capture_output=True, timeout=15).stdout
-            else:
-                existing = subprocess.run(['ps', '-p', str(pid), '-o', 'command='], capture_output=True, text=True, check=True).stdout
-            if str(ROOT / 'portal/discovery.py') in existing and str(directory / 'state.json') in existing:
-                os.kill(pid, 15)
-        except (ValueError, OSError, subprocess.SubprocessError):
-            pass
+        from uninstall import stop_process
+        stop_process(ROOT, directory, 'discovery.py')
     background = {'creationflags': 0x00000008 | 0x00000200} if sys.platform == 'win32' else {'start_new_session': True}
     with (directory / 'discovery.log').open('a', encoding='utf-8') as log:
         process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log, stderr=log, **background)
     save(pidfile, str(process.pid) + '\n')
     print('宿主机入口发现已在后台启动；当前环境未配置系统自启，主机重启后需重跑安装脚本。')
+
+
+@contextmanager
+def installation_control():
+    from uninstall import admin, service_file, stop_process
+    from service_control import Controller, SERVICES
+    unit = service_file(ROOT)
+    if sys.platform.startswith('linux') and unit.exists():
+        if str(ROOT / 'portal/discovery.py') not in unit.read_text(encoding='utf-8'):
+            raise RuntimeError('发现服务已自定义，停止安装以免与升级恢复并发')
+        admin('systemctl', 'stop', unit.name)
+    stop_process(ROOT, ROOT / '.workbench/discovery', 'discovery.py')
+    controller = Controller()
+    with closing(sqlite3.connect(controller.directory / 'agent.lock', timeout=1)) as lock:
+        try:
+            lock.execute('BEGIN EXCLUSIVE')
+        except sqlite3.OperationalError:
+            raise RuntimeError('服务操作尚未结束，请等待 Spug 任务完成后重跑安装') from None
+        recovered = {}
+        for path in (controller.directory / 'recovery').glob('*.json'):
+            state = json.loads(path.read_text(encoding='utf-8'))
+            controller.recover(state, check_health=False)
+            key = SERVICES[state['service']]
+            recovered[key] = load_env(ROOT / '.env')[key]
+        # 持锁直到 Compose 和路由配置完成，恢复写卷期间绝不启动业务容器。
+        yield recovered
 
 
 def install_hub(http_port, configure_only=False, offline=False, reconfigure=False, reuse=False):
@@ -324,23 +343,28 @@ def main():
     reconfigure = choose_configuration(source, args.reconfigure, args.reuse_config, draft)
     v = configure(existing, reconfigure, draft=draft,
                   checkpoint=lambda values: save(progress, env_text(values)))
-    write_outputs(v)
-    progress.unlink(missing_ok=True)
-    print(f'配置已保存：{ROOT / ".env"}（已限制文件访问权限；服务启动并检查成功后回显登录信息）')
-    print('已生成 collector.env（只含采集连接凭据）及 outer-nginx.conf.example。')
+    v['OPSKIT_CONTROL_OFFLINE'] = 'true' if args.offline else 'false'
     if args.configure_only:
+        write_outputs(v)
+        progress.unlink(missing_ok=True)
         print('配置阶段完成。准备好 Docker 后重新运行 ./install.sh 即可继续。')
         return
     docker_ready()
-    run(['docker', 'compose', 'config', '--quiet'])
-    startup = compose_start_command(v)
-    prepare_images(v, ROOT / '.env', offline=args.offline)
-    from verify_ui import verify
-    verify(v, hub_only=v.get('HUB_ONLY') == 'true')
-    start_discovery()
-    run(startup)
-    from configure_proxy import initialize
-    initialize(v)
+    with installation_control() as recovered:
+        v.update(recovered)
+        write_outputs(v)
+        progress.unlink(missing_ok=True)
+        print(f'配置已保存：{ROOT / ".env"}（已限制文件访问权限；服务启动并检查成功后回显登录信息）')
+        print('已生成 collector.env（只含采集连接凭据）及 outer-nginx.conf.example。')
+        run(['docker', 'compose', 'config', '--quiet'])
+        startup = compose_start_command(v)
+        prepare_images(v, ROOT / '.env', offline=args.offline)
+        from verify_ui import verify
+        verify(v, hub_only=v.get('HUB_ONLY') == 'true')
+        run(startup)
+        from configure_proxy import initialize
+        initialize(v)
+    start_discovery(control=True)
     from self_management import initialize as initialize_self
     initialize_self(v)
     from check import check

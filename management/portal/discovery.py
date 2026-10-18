@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import ssl
 import subprocess
 import sys
@@ -255,13 +256,29 @@ def write_snapshot(path, value):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='OpsKit 宿主机入口发现，不操作容器或业务服务')
+    parser = argparse.ArgumentParser(description='OpsKit 宿主机入口发现及可选受限执行通道')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--once', action='store_true')
+    parser.add_argument('--control', action='store_true', help='启用本安装 DBX/VictoriaLogs 固定操作')
     args = parser.parse_args()
+    stop = threading.Event()
+    control = None
+    if args.control:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+        from service_control import Controller
+        controller = Controller()
+        if not args.once:
+            control = threading.Thread(target=controller.serve, args=(stop,), daemon=False)
+            control.start()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
     discovery = Discovery()
-    while True:
-        write_snapshot(args.output, discovery.read())
-        if args.once:
-            break
-        time.sleep(30)
+    try:
+        while not stop.is_set():
+            write_snapshot(args.output, discovery.read())
+            if args.once:
+                break
+            stop.wait(30)
+    finally:
+        stop.set()
+        if control:
+            control.join()

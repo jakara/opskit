@@ -1,6 +1,6 @@
 # OpsKit 固定版本子路径前端
 
-本目录是制包机生成的架构无关静态产物；客户现场只读挂载，不安装 Node、Yarn 或前端依赖，不执行构建。这里只适配浏览器路径，不改变上游业务 API 或鉴权模型。
+本目录是制包机生成的架构无关静态产物；客户现场只读挂载，不安装 Node、Yarn 或前端依赖，不执行构建。本目录提供子路径前端及配套运行超时文件，不改变上游业务 API 或鉴权模型。
 
 ## 支持的精确上游
 
@@ -18,6 +18,8 @@ NPM 生产配置直接读取 `/app/frontend`，启动时的 ownership 列表不�
 NPM：Vite base `/npm/`、BrowserRouter basename、统一 `/npm/api/`、延迟加载资源与 CSS、图片/图标/manifest、Dashboard 裸链接、NavLink 的真实 href（包括新窗打开）。日志是 HTTP 轮询，不存在管理前端 WebSocket。NPM 所需 `Authorization: Bearer` 必须由代理保留；`/npm/api/` 不能再用同一个 Authorization 做外层 Basic 校验。
 
 Spug：CRA `PUBLIC_URL=/spug`、history basename、统一 axios 内部 API 前缀、全部 9 处 WebSocket、SSH 新窗与裸链接、resource 下载与图标、旧数据库导航图标、侧栏当前路径、复制出的 Webhook URL。接口判断和 X-Token/X-Language 在 URL 改写前执行，外部 URL 不被改写。未增加共享的根 `/api`、`/static`、`/images` 等路由。
+
+Spug 原生任务的“执行测试”页面最多等待一小时：仅该请求设为 `timeout: 3600000`，中英文提示同步更新。`runtime/nginx.conf` 与 `runtime/start-api.sh` 来自同版上游，分别仅将内部 `/api/` 的 `proxy_read_timeout` 从180秒改为3600秒、给原Gunicorn命令加上 `--timeout 3600`；管理端对应副本位于 `management/spug/`，制包校验两份字节一致。部署时只读挂载到 `/etc/nginx/nginx.conf` 与 `/opt/spug/spug_api/tools/start-api.sh`，外层代理读取超时也需3600秒。这两份运行源码及其校验和包含在源码下载包内。
 
 两者当前登录使用 localStorage 令牌；NPM 键为 `authentications`，Spug 键为 `token`，没有待迁移的会话 Cookie Path。同域路径共享浏览器 origin；原独立端口的登录状态不会自动迁移，首次访问需重新登录。代理应验证实际响应中的 Cookie/Location；本补丁不凭空创建 Cookie，也不把路径当作同源隔离边界。
 

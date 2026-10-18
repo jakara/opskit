@@ -34,7 +34,12 @@ def initialize(v):
             raise RuntimeError('Spug 监控或调度进程未就绪，请检查启动日志后重跑')
         time.sleep(2)
     spug = spug_run((ROOT / 'scripts/spug_bootstrap.py').read_text(encoding='utf-8'),
-                    {key: v[key] for key in ('OPS_PUBLIC_SCHEME', 'OPS_PUBLIC_HOST', 'OPS_PUBLIC_PORT', 'SPUG_ADMIN_USER')})
+                    {key: v[key] for key in ('OPS_PUBLIC_SCHEME', 'OPS_PUBLIC_HOST', 'OPS_PUBLIC_PORT', 'SPUG_ADMIN_USER', 'DBX_IMAGE', 'VICTORIALOGS_IMAGE')})
+    control = subprocess.run(['docker', 'compose', 'exec', '-T', 'spug', 'python3',
+                              '/opt/opskit/control_client.py', 'status', 'dbx'],
+                             cwd=ROOT, capture_output=True, text=True, timeout=30)
+    if control.returncode:
+        raise RuntimeError('Spug 宿主执行通道未就绪，请核对目录权限和发现进程后重跑')
     # 立即运行同一只读检查；定时任务仍由 Spug 自身每 60 秒执行。
     from spug_bootstrap import HEALTH_COMMAND
     probe = """import json, subprocess
@@ -56,8 +61,8 @@ print(json.dumps({'healthy': r.returncode == 0, 'services': [json.loads(line) fo
         print('Spug 中已有同名人工配置，已保留；请在 WebUI 核对冲突项。')
     from dbx_bootstrap import initialize as initialize_dbx
     dbx = initialize_dbx(v)
-    result = {'spug': spug, 'health': health, 'dbx': dbx}
+    result = {'spug': spug, 'health': health, 'dbx': dbx, 'control_channel': True}
     save(ROOT / '.workbench/self-management.json', json.dumps(result, ensure_ascii=False, indent=2) + '\n')
-    print('已初始化 Spug 内置应用、健康监控与每分钟只读巡检；已有配置保留。')
+    print('已初始化 Spug 健康巡检及 DBX/日志服务的手动启停、重启和升级任务；已有配置保留。')
     print('VictoriaLogs 日志使用 LogsQL 查询；DBX 预置 Spug MariaDB，不创建不兼容的日志数据库连接。')
     return result

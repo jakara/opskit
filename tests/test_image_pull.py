@@ -21,7 +21,7 @@ ALLOWLIST = 'error from registry: 这镜像不在白名单. this image is not in
 
 class ImagePullTests(unittest.TestCase):
     def prepare(self, images, failures=None, offline=False, locked=False, overrides=None, literal=False,
-                config_name='.env'):
+                config_name='.env', service_names=None):
         failures = {key: list(value) for key, value in (failures or {}).items()}
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -37,7 +37,7 @@ class ImagePullTests(unittest.TestCase):
                 calls.append(args)
                 if args[-3:] == ['config', '--format', 'json']:
                     resolved = images if literal else common.load_env(config)
-                    document = {'services': {key: {'image': resolved[key]} for key in images}}
+                    document = {'services': {(service_names or {}).get(key, key): {'image': resolved[key]} for key in images}}
                     return subprocess.CompletedProcess(args, 0, json.dumps(document))
                 image = args[-1]
                 errors = failures.get(image, [])
@@ -81,7 +81,8 @@ class ImagePullTests(unittest.TestCase):
             with patch.object(management, 'ROOT', root), patch.object(common, 'ROOT', root), \
                     patch.object(management, 'configure', return_value=values), \
                     patch.object(management, 'docker_ready'), \
-                    patch.object(management, 'start_discovery', side_effect=lambda: calls.append(['discovery'])), \
+                    patch.object(management, 'installation_control', return_value=contextlib.nullcontext({})), \
+                    patch.object(management, 'start_discovery', side_effect=lambda **kwargs: calls.append(['discovery'])), \
                     patch.object(common.subprocess, 'run', side_effect=docker), \
                     patch.dict(sys.modules, {'configure_proxy': SimpleNamespace(initialize=initialize),
                                              'check': SimpleNamespace(check=check),
@@ -177,6 +178,42 @@ class ImagePullTests(unittest.TestCase):
         _, _, error, _, _ = self.prepare({'SPUG_IMAGE': OLD_SPUG}, {OLD_SPUG: [ALLOWLIST]}, literal=True)
         self.assertIn('Compose 实际镜像', error)
 
+    def test_exact_rollback_tags_for_controlled_services_are_inspected_without_pull(self):
+        images = {'DBX_IMAGE': 'registry.example:5000/dbx:opskit-rollback-' + 'a' * 32,
+                  'VICTORIALOGS_IMAGE': 'example/logs:opskit-rollback-' + '0' * 32}
+        saved, calls, error, sleeps, _ = self.prepare(images, service_names={'DBX_IMAGE': 'dbx', 'VICTORIALOGS_IMAGE': 'victorialogs'})
+        self.assertIsNone(error)
+        self.assertEqual(sleeps, 0)
+        for key, image in images.items():
+            self.assertEqual(saved[key], image)
+            self.assertIn(['docker', 'image', 'inspect', image], calls)
+        self.assertFalse(any(call[:2] == ['docker', 'pull'] for call in calls))
+
+    def test_missing_local_rollback_image_fails_without_replacing_it_from_registry(self):
+        image = 'example/dbx:opskit-rollback-' + 'f' * 32
+        saved, calls, error, _, _ = self.prepare({'DBX_IMAGE': image}, {image: ['No such image']},
+                                                service_names={'DBX_IMAGE': 'dbx'})
+        self.assertEqual(saved['DBX_IMAGE'], image)
+        self.assertIn('本地镜像缺失', error)
+        self.assertIn(['docker', 'image', 'inspect', image], calls)
+        self.assertNotIn(['docker', 'pull', image], calls)
+
+    def test_other_services_and_similar_tags_keep_normal_pull_behavior(self):
+        exact = 'example/image:opskit-rollback-' + 'a' * 32
+        cases = [('SPUG_IMAGE', 'spug', exact), ('WORKBENCH_IMAGE', 'workbench', exact)]
+        cases += [('DBX_IMAGE', 'dbx', image) for image in (
+            'example/dbx:opskit-rollback-' + 'a' * 31,
+            'example/dbx:opskit-rollback-' + 'a' * 33,
+            'example/dbx:opskit-rollback-' + 'A' * 32,
+            'example/dbx:opskit-rollback-' + 'g' * 32,
+            exact + '-extra', 'example/dbx:custom-opskit-rollback-' + 'a' * 32)]
+        for key, service, image in cases:
+            with self.subTest(service=service, image=image):
+                _, calls, error, _, _ = self.prepare({key: image}, service_names={key: service})
+                self.assertIsNone(error)
+                self.assertIn(['docker', 'pull', image], calls)
+                self.assertNotIn(['docker', 'image', 'inspect', image], calls)
+
     def test_hub_failure_resume_uses_standalone_scope(self):
         _, _, error, _, _ = self.prepare({'NPM_IMAGE': 'jc21/nginx-proxy-manager:2.16.0'},
                                          {'jc21/nginx-proxy-manager:2.16.0': [ALLOWLIST],
@@ -211,6 +248,7 @@ class ImagePullTests(unittest.TestCase):
             values = management.configure({}, interactive=False)
             with patch.object(management, 'ROOT', root), patch.object(management, 'configure', return_value=values), \
                     patch.object(management, 'docker_ready'), patch.object(management, 'run') as run, \
+                    patch.object(management, 'installation_control', return_value=contextlib.nullcontext({})), \
                     patch.object(management, 'compose_start_command', return_value=['docker', 'compose', 'up', '-d']), \
                     patch.object(management, 'prepare_images', side_effect=RuntimeError('镜像缺失')), \
                     patch.object(management, 'start_discovery') as discovery, patch.object(sys, 'argv', ['install.py']):

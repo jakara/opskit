@@ -13,7 +13,8 @@ from verify import ROOT, VERSIONS, sha256, verify_sources
 
 SOURCE_FILES = ['versions.json', 'verify.py', 'build_frontends.py', 'README.md', 'npm-prefix.patch',
                 'spug-prefix.patch', 'spug-package-lock.json', 'npm-LICENSE.txt', 'spug-LICENSE.txt',
-                'upstream/npm-v2.16.0.tar.gz', 'upstream/spug-049984e.tar.gz']
+                'upstream/npm-v2.16.0.tar.gz', 'upstream/spug-049984e.tar.gz',
+                'runtime/nginx.conf', 'runtime/start-api.sh']
 
 
 def finalize(output):

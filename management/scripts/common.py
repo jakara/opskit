@@ -56,9 +56,9 @@ def powershell(script, **kwargs):
                           check=True, encoding='utf-8-sig', **kwargs)
 
 
-def protect_private(path, existing=False):
+def protect_private(path, existing=False, directory=False):
     if sys.platform != 'win32':
-        path.chmod(0o600)
+        path.chmod(0o700 if directory else 0o600)
         return
     # chmod 在 Windows 上不能限制其他用户读取，使用当前用户、SYSTEM、管理员的 NTFS ACL。
     # 已有 ACL 修改前另存 SDDL 并核验，可用 Set-Acl 恢复；新建临时文件没有待保留 ACL。
@@ -66,12 +66,18 @@ def protect_private(path, existing=False):
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $path = $env:OPSKIT_PRIVATE_PATH
-$acl = [Security.AccessControl.FileSecurity]::new()
+$fileAcl = [Security.AccessControl.FileSecurity]::new()
+$acl = if ($env:OPSKIT_PRIVATE_DIRECTORY -eq '1') { [Security.AccessControl.DirectorySecurity]::new() } else { [Security.AccessControl.FileSecurity]::new() }
 $acl.SetAccessRuleProtection($true, $false)
+$fileAcl.SetAccessRuleProtection($true, $false)
 $sids = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544') | Select-Object -Unique
 foreach ($sid in $sids) {
     $identity = [Security.Principal.SecurityIdentifier]::new($sid)
     $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', 'Allow')
+    $fileAcl.AddAccessRule($rule)
+    if ($env:OPSKIT_PRIVATE_DIRECTORY -eq '1') {
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')
+    }
     $acl.AddAccessRule($rule)
 }
 $old = Get-Acl -LiteralPath $path
@@ -82,7 +88,7 @@ if ($env:OPSKIT_BACKUP_ACL -eq '1') {
     [IO.Directory]::CreateDirectory($folder) | Out-Null
     $backup = Join-Path $folder ((Split-Path -Leaf $path) + '.acl.txt')
     [IO.File]::WriteAllText($backup, '')
-    Set-Acl -LiteralPath $backup -AclObject $acl
+    Set-Acl -LiteralPath $backup -AclObject $fileAcl
     $sddl = $old.Sddl
     [IO.File]::WriteAllText($backup, $sddl, [Text.UTF8Encoding]::new($false))
     if ([IO.File]::ReadAllText($backup) -cne $sddl) { throw 'ACL backup verification failed' }
@@ -93,7 +99,8 @@ if ($actual.GetSecurityDescriptorSddlForm($section) -ne $acl.GetSecurityDescript
 '''
     try:
         powershell(script, env=dict(os.environ, OPSKIT_PRIVATE_PATH=str(path.resolve()),
-                                    OPSKIT_BACKUP_ACL='1' if existing else '0'),
+                                    OPSKIT_BACKUP_ACL='1' if existing else '0',
+                                    OPSKIT_PRIVATE_DIRECTORY='1' if directory else '0'),
                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as exc:
         raise RuntimeError('无法限制 Windows 配置文件权限，请将安装目录放在当前用户可写的 NTFS 磁盘后重跑。') from exc
@@ -257,8 +264,9 @@ def prepare_images(values, config, command=None, offline=False):
     for service, image in services().items():
         if image in ready:
             continue
-        print(f'准备镜像 [{service}]：{image}' + ('（仅检查本地）' if offline else '（下载期间请稍候）'), flush=True)
-        if offline:
+        rollback = service in ('dbx', 'victorialogs') and bool(re.search(r':opskit-rollback-[a-f0-9]{32}$', image))
+        print(f'准备镜像 [{service}]：{image}' + ('（保留已核验的本地回退镜像）' if rollback else '（仅检查本地）' if offline else '（下载期间请稍候）'), flush=True)
+        if offline or rollback:
             try:
                 run(['docker', 'image', 'inspect', image], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
                 ready.add(image)
