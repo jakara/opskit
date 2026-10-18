@@ -198,11 +198,17 @@ def ask(label, default, validator, secret=False):
         print('输入无效，请按提示重新填写。')
 
 
-def choose_configuration(path, reconfigure=False, reuse=False, draft=None):
-    if reconfigure or reuse or draft or not path.exists():
+def choose_configuration(path, reconfigure=False, reuse=False, draft=None, reinstall=None):
+    if reconfigure or reuse or (draft and not reinstall) or not path.exists():
         return reconfigure
     print(f'\n发现已有配置：{path}\n  1) 复用已有配置\n  2) 重新配置（保留已有密码和数据）')
-    return ask('请选择配置方式', '1', lambda s: s in ('1', '2')) == '2'
+    if reinstall:
+        print('  3) 完全重新安装（清空所有密码和数据，先备份）')
+    choice = ask('请选择配置方式', '1', lambda s: s in (('1', '2', '3') if reinstall else ('1', '2')))
+    if choice == '3':
+        reinstall()
+        return True
+    return choice == '2'
 
 
 def compose_start_command(values, command=None, files=None):

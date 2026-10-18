@@ -13,6 +13,7 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import tarfile
 
 from common import ROOT, ask, choose_configuration, compose_start_command, docker_ready, env_text, host, image_defaults, ipv4, load_env, password, port, powershell, prepare_images, run, save
 
@@ -278,10 +279,47 @@ def installation_control():
         yield recovered
 
 
+def clean_reinstall(config, configure_only=False, hub_only=False):
+    if configure_only:
+        raise ValueError('完全重新安装会清空运行数据，不能与 --configure-only 同时使用；请正常运行安装向导再选择第三项。')
+    if config not in (ROOT / '.env', ROOT / '.workbench/hub.env'):
+        raise ValueError('旧版配置不在当前模块内，请先使用旧版卸载入口清理，避免遗漏旧数据；未执行清空。')
+    from uninstall import inventory, uninstall
+    docker_ready()
+    plan = inventory([ROOT], hub_only)
+    if plan.get('orphans'):
+        raise RuntimeError('存在无法直接备份的孤立卷，请先恢复原容器挂载后再清理：' + '、'.join(plan['orphans']))
+    command = ['docker', 'compose']
+    if hub_only:
+        command += ['--env-file', str(config), '-f', 'hub.compose.yaml']
+    declared = json.loads(run(command + ['config', '--format', 'json'], capture_output=True, text=True).stdout)
+    names = {volume['name'] for volume in declared.get('volumes', {}).values()}
+    existing = set(run(['docker', 'volume', 'ls', '--format', '{{.Name}}'], capture_output=True, text=True).stdout.splitlines())
+    unknown = (names & existing) - {volume['name'] for volume in plan['volumes']}
+    if unknown:
+        raise RuntimeError('存在未能由当前容器确认归属的数据卷，已停止完全重装；请先恢复原容器挂载后再清理：' + '、'.join(sorted(unknown)))
+    print('\n完全重新安装将清空当前安装范围内的密码、登录态、代理规则及全部数据。')
+    print('  安装目录：' + str(ROOT) + ('（仅精简管理端）' if hub_only else '（管理模块，包括同目录的精简管理端）'))
+    print('  容器：' + ('、'.join(c['Name'].lstrip('/') for c in plan['containers']) or '无'))
+    print('  数据卷：' + ('、'.join(volume['name'] for volume in plan['volumes']) or '无'))
+    print('源码、交付文档、离线镜像及其他 Docker 应用保留；备份内仍含原凭据，请妥善保管。')
+    if input('确认完全重新安装请输入 yes；其他输入取消：').strip().lower() != 'yes':
+        raise RuntimeError('已取消完全重新安装，未作更改。')
+    if hub_only:
+        backup = uninstall([ROOT], hub_only=True, purge=True, yes=True)
+    else:
+        with installation_control():
+            backup = uninstall([ROOT], purge=True, yes=True)
+    if backup is None:
+        raise RuntimeError('已取消完全重新安装，未进入新配置向导。')
+    print(f'原安装已清空，可恢复备份：{backup}；接下来配置全新安装，留空生成新密码。')
+
+
 def install_hub(http_port, configure_only=False, offline=False, reconfigure=False, reuse=False):
     config = ROOT / '.workbench/hub.env'
+    reconfigure = choose_configuration(config, reconfigure, reuse,
+                                        reinstall=lambda: clean_reinstall(config, configure_only, hub_only=True))
     previous = load_env(config)
-    reconfigure = choose_configuration(config, reconfigure, reuse)
     http_port = int(previous.get('OPSKIT_HTTP_PORT', '80')) if http_port is None else http_port
     v = configure(previous, interactive=False)
     if reconfigure:
@@ -356,13 +394,15 @@ def main():
     if not source.exists() and (ROOT.parent / '.env').exists():
         source = ROOT.parent / '.env'
         print('发现 v0.1 根目录配置，将保留原文件并迁移已有密码。')
-    existing = load_env(source)
-    existing.pop('HUB_ONLY', None)
     progress = ROOT / '.env.install-progress'
     draft = load_env(progress)
     if draft:
         print('发现未完成配置，已将上次确认的选择作为默认值；已有密码继续保留。')
-    reconfigure = choose_configuration(source, args.reconfigure, args.reuse_config, draft)
+    reconfigure = choose_configuration(source, args.reconfigure, args.reuse_config, draft,
+                                        reinstall=lambda: clean_reinstall(source, args.configure_only))
+    existing = load_env(source)
+    existing.pop('HUB_ONLY', None)
+    draft = load_env(progress)
     v = configure(existing, reconfigure, draft=draft,
                   checkpoint=lambda values: save(progress, env_text(values)))
     v['OPSKIT_CONTROL_OFFLINE'] = 'true' if args.offline else 'false'
@@ -401,7 +441,7 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError) as exc:
+    except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError, tarfile.TarError) as exc:
         print(f'安装未完成：{exc}', file=sys.stderr)
         sys.exit(1)
     except (KeyboardInterrupt, EOFError):

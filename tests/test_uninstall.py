@@ -134,8 +134,12 @@ class UninstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'.env').touch();(root/'.workbench/discovery').mkdir(parents=True)
             (root/'.workbench/hub.env').touch()
+            auth = root / '.workbench/auth'
+            auth.mkdir()
+            for name in ('operator.json', 'components.json', 'hub-operator.json', 'hub-components.json'):
+                (auth / name).touch()
             paths=uninstall.local_paths(root,hub_only=True,discovery_in_use=True)
-            self.assertEqual(paths,[root/'.workbench/hub.env'])
+            self.assertEqual(paths,[root/'.workbench/hub.env', auth/'hub-operator.json', auth/'hub-components.json'])
 
     def test_standalone_modules_share_engine_and_help_installs_nothing(self):
         self.assertEqual((ROOT/'management/scripts/uninstall.py').read_bytes(),(ROOT/'collector/scripts/uninstall.py').read_bytes())

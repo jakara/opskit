@@ -174,7 +174,8 @@ def stop_discovery(root, backup):
 
 def local_paths(root, hub_only=False, discovery_in_use=False):
     if hub_only:
-        names = ['.workbench/hub.env', '.workbench/hub', '.workbench/development']
+        names = ['.workbench/hub.env', '.workbench/hub', '.workbench/development',
+                 '.workbench/auth/hub-operator.json', '.workbench/auth/hub-components.json']
         if not discovery_in_use:
             names.append('.workbench/discovery')
     else:

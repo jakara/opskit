@@ -57,7 +57,7 @@ cd opskit
 
 首次联网安装会自动准备缺失的 Python 3.9+、Docker 和 Compose V2，复用已有可用依赖。向导会引导选择安装目录、网络、账户及日志配置；中断后重跑可沿用上次已确认的选项。系统授权、Docker Desktop 首次许可和必要的重启仍需在系统界面完成。
 
-已有配置时先选择复用或重新配置；服务启动并检查成功后，终端统一回显一次管理端登录凭据和保存位置。已有运行中的本套件容器会在镜像就绪后自动重建重启，保留持久化数据。
+已有配置时可选择复用、保留密码和数据的重新配置，或备份核验后清空密码和数据、完全重新安装；服务启动并检查成功后，终端统一回显一次管理端登录凭据和保存位置。已有运行中的本套件容器会在镜像就绪后自动重建重启，保留持久化数据。
 
 ### 3. 打开工作台并接入业务机
 
@@ -190,7 +190,7 @@ Windows 使用 `.\uninstall.cmd -DryRun` 预览、`.\uninstall.cmd` 卸载；日
 <details>
 <summary><strong>清空重装、备份范围与旧版迁移</strong></summary>
 
-- **清空重装：** 使用 `./uninstall.sh --purge-data`，Windows 对应 `.\uninstall.cmd -PurgeData`。先备份并核验配置、收藏和卷内容，再删除原数据；备份位于 `.uninstall-backups/时间戳/`。失败时保留原数据，但服务可能已停止。
+- **清空重装：** 管理端安装向导选择第三项，输入 `yes` 后先备份核验，再清空原密码和数据并进入全新配置。也可使用 `./uninstall.sh --purge-data`，Windows 对应 `.\uninstall.cmd -PurgeData`。先备份并核验配置、收藏和卷内容，再删除原数据；备份位于 `.uninstall-backups/时间戳/`。失败时保留原数据，但服务可能已停止。
 - **卸载范围：** 可选 `all`（默认）、`hub`、`management`、`collector`。按安装目录和 Compose 标签确认资源归属，保留 Docker、Python、镜像及其他应用；共享资源或无法确认归属时拒绝清理。
 - **完整备份：** Spug SQL 脚本只备份 MariaDB；还需备份配置、工作台、NPM、Spug 文件、DBX 和日志数据等持久卷，并验证恢复。日常停止不要使用会删卷的 `docker compose down -v`。
 - **v0.1 迁移：** 先备份配置与持久卷，停止旧 Compose 的 nginx。旧根目录 `.env` 只读导入并补齐；自定义 Compose 项目名继续通过 `COMPOSE_PROJECT_NAME` 保持一致。原 `agents/` 改为 `collector/`，补齐采集配置后验证日志链路。
