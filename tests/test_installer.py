@@ -145,28 +145,27 @@ class InstallerTests(unittest.TestCase):
                 self.assertEqual(updated[key], secrets[key])
                 self.assertNotIn(updated[key], fourth.stdout + fourth.stderr)
 
-    def test_management_reprompts_conflicting_log_username_before_passwords(self):
+    def test_management_auto_manages_component_accounts_and_separates_collector(self):
         for reconfigure in (False, True):
             with self.subTest(reconfigure=reconfigure), tempfile.TemporaryDirectory() as tmp:
                 dest = Path(tmp) / 'management'
                 shutil.copytree(ROOT / 'management', dest, ignore=shutil.ignore_patterns('.env', 'collector.env', '__pycache__', '.backups'))
                 existing = self.defaults() if reconfigure else {}
                 if existing:
+                    existing['NPM_ADMIN_EMAIL'] = 'custom@example.internal'
                     (dest / '.env').write_text(common.env_text(existing))
-                answers = [''] * 11 + ['', 'shareduser', 'shareduser', 'shareduser', 'logwriter']
-                answers += [''] * (6 if reconfigure else 11)
                 args = [str(dest / 'install.sh'), '--configure-only']
                 if reconfigure:
                     args.append('--reconfigure')
-                result = subprocess.run(args, input='\n'.join(answers) + '\n', text=True, capture_output=True)
+                result = subprocess.run(args, input='\n' * 5 + 'logagent\n' + '\n' * 8, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.count('运维访问和日志写入必须使用不同账户'), 2)
-                self.assertEqual(result.stdout.count('日志写入用户名 ['), 3)
-                self.assertLess(result.stdout.rindex('日志写入用户名 ['), result.stdout.index('密码要求：'))
+                for prompt in ('NPM 管理员邮箱', 'Spug 管理员用户名', '日志写入用户名', '已备份原配置'):
+                    self.assertNotIn(prompt, result.stdout)
                 saved = common.load_env(dest / '.env')
-                self.assertEqual(saved['OPS_ADMIN_USER'], 'shareduser')
-                self.assertEqual(saved['LOG_AGENT_USER'], 'logwriter')
+                self.assertEqual(saved['OPS_ADMIN_USER'], 'logagent')
+                self.assertEqual(saved['LOG_AGENT_USER'], 'opskit-agent')
                 if existing:
+                    self.assertEqual(saved['NPM_ADMIN_EMAIL'], existing['NPM_ADMIN_EMAIL'])
                     for key in management.PASSWORD_KEYS:
                         self.assertEqual(saved[key], existing[key])
 

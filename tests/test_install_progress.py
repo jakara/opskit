@@ -73,22 +73,23 @@ class InstallProgressTests(unittest.TestCase):
 
     def test_password_is_saved_before_next_prompt_and_never_printed(self):
         password = 'remember_password_1234!'
-        interrupted = self.run_install('management', '\n' * 14 + password + '\n')
+        interrupted = self.run_install('management', '\n' * 6 + password + '\n')
         self.assertEqual(interrupted.returncode, 1)
         root = self.root / 'management'
-        self.assertEqual(common.load_env(root / '.env.install-progress')['NPM_ADMIN_PASSWORD'], password)
+        self.assertEqual(common.load_env(root / '.env.install-progress')['OPS_ADMIN_PASSWORD'], password)
         completed = self.run_install('management', '\n' * 35)
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(common.load_env(root / '.env')['NPM_ADMIN_PASSWORD'], password)
+        self.assertEqual(common.load_env(root / '.env')['OPS_ADMIN_PASSWORD'], password)
         self.assertNotIn(password, interrupted.stdout + interrupted.stderr + completed.stdout + completed.stderr)
 
-    def test_conflicting_username_is_not_checkpointed(self):
-        result = self.run_install('management', '\n' * 11 + 'admin\noperator1\noperator1\n')
+    def test_unified_username_does_not_collide_with_automatic_collector_identity(self):
+        result = self.run_install('management', '\n' * 5 + 'logagent\n')
         self.assertEqual(result.returncode, 1)
         values = common.load_env(self.root / 'management/.env.install-progress')
-        self.assertEqual(values['OPS_ADMIN_USER'], 'operator1')
-        self.assertNotIn('LOG_AGENT_USER', values)
-        self.assertIn('运维访问和日志写入必须使用不同账户', result.stdout)
+        self.assertEqual(values['OPS_ADMIN_USER'], 'logagent')
+        self.assertEqual(values['LOG_AGENT_USER'], 'opskit-agent')
+        self.assertNotIn('日志写入用户名', result.stdout)
+        self.assertNotIn('已备份原配置', result.stdout)
 
     def test_collector_resumes_labels_directory_and_keeps_issued_credentials(self):
         root = self.root / 'collector'

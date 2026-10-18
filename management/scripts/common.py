@@ -14,6 +14,7 @@ import tempfile
 import time
 from datetime import datetime
 
+
 ROOT = Path(__file__).resolve().parents[1]
 _operator_sessions = {}
 
@@ -160,7 +161,6 @@ def save(path, content, private=True):
         backup.write_bytes(path.read_bytes())
         if hashlib.sha256(path.read_bytes()).digest() != hashlib.sha256(backup.read_bytes()).digest():
             raise RuntimeError(f'备份校验失败：{path}')
-        print(f'已备份原配置：{backup}')
         if private and sys.platform == 'win32':
             protect_private(path, existing=True)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,22 +188,18 @@ def env_text(values):
 
 
 def ask(label, default, validator, secret=False):
-    import getpass
-    while True:
-        hint = ('回车采用自动生成密码' if default else '填写管理端发放的密码') if secret else str(default)
-        prompt = f'{label} [{hint}]：'
-        value = (getpass.getpass(prompt) if secret else input(prompt)).strip() or str(default)
-        if validator(value):
-            return value
-        print('输入无效，请按提示重新填写。')
+    from console_ui import ask as prompt
+    return prompt(label, default, validator, secret=secret)
 
 
 def choose_configuration(path, reconfigure=False, reuse=False, draft=None, reinstall=None):
     if reconfigure or reuse or (draft and not reinstall) or not path.exists():
         return reconfigure
-    print(f'\n发现已有配置：{path}\n  1) 复用已有配置\n  2) 重新配置（保留已有密码和数据）')
+    from console_ui import summary
+    rows = [('配置文件', path), ('1)', '复用已有配置'), ('2)', '重新配置（保留已有密码和数据）')]
     if reinstall:
-        print('  3) 完全重新安装（清空所有密码和数据，先备份）')
+        rows.append(('3)', '完全重新安装（清空所有密码和数据，先备份）'))
+    summary('发现已有配置', rows)
     choice = ask('请选择配置方式', '1', lambda s: s in (('1', '2', '3') if reinstall else ('1', '2')))
     if choice == '3':
         reinstall()

@@ -13,6 +13,8 @@ import time
 from urllib.error import HTTPError
 from urllib.request import Request, build_opener, ProxyHandler
 
+import console_ui as ui
+
 from common import ROOT, ask, choose_configuration, compose_start_command, docker_ready, env_text, host, image_defaults, load_env, password, port, prepare_images, run, save
 
 IMAGES = image_defaults({'FLUENTBIT_IMAGE': 'm.daocloud.io/docker.io/fluent/fluent-bit:5.1.4'})
@@ -62,7 +64,7 @@ def configure(existing, reconfigure=False, checkpoint=None, draft=None):
     required = ('HOST_ID', 'PROJECT_ID', 'APP_ID', 'APP_ENV', 'HOST_LOG_DIR', 'LOG_FILE_PATTERN',
                 'OPS_HOST', 'OPS_VHOST', 'OPS_PORT', 'OPS_SCHEME', 'LOG_AGENT_USER', 'LOG_AGENT_PASSWORD')
     if reconfigure or draft or any(key not in v for key in required):
-        print('\n采集端配置：默认向管理机内网 HTTP 写入，不需要证书。')
+        ui.step(1, 4, '连接管理中心', '使用管理中心发放的 collector.env；有效输入自动保存。')
         prompt('OPS_HOST', '管理机可连接的内网 IP 或域名', v.get('OPS_HOST', 'ops.example.internal'), host)
         prompt('OPS_SCHEME', '日志接入协议（直连内网用 http，经过外层 HTTPS 用 https）', v.get('OPS_SCHEME', 'http'), lambda s: s in ('http', 'https'))
         prompt('OPS_PORT', '日志接入端口', v.get('OPS_PORT', '443' if v['OPS_SCHEME'] == 'https' else '80'), port)
@@ -74,6 +76,7 @@ def configure(existing, reconfigure=False, checkpoint=None, draft=None):
                 ('APP_ENV', '运行环境', 'production'),
                 ('LOG_AGENT_USER', '日志写入用户名', 'logagent')):
             prompt(key, label, v.get(key, default), identifier)
+        ui.step(2, 4, '业务日志范围')
         default_directory = 'C:/logs/myapp' if sys.platform == 'win32' else '/var/log/myapp'
         prompt('HOST_LOG_DIR', '业务日志绝对目录（必须已存在）', v.get('HOST_LOG_DIR', default_directory), log_directory)
         prompt('LOG_FILE_PATTERN', '该目录中的日志文件匹配规则', v.get('LOG_FILE_PATTERN', '*.log'), pattern)
@@ -108,6 +111,7 @@ def main():
     configuration.add_argument('--reuse-config', action='store_true', help='明确复用已有配置，跳过选择菜单（适用于自动化）')
     args = parser.parse_args()
     os.umask(0o077)
+    ui.banner('日志采集端安装向导')
     progress = ROOT / '.env.install-progress'
     draft = load_env(progress)
     if draft:
@@ -121,6 +125,7 @@ def main():
     if args.configure_only:
         print('配置阶段完成。准备好 Docker 和管理端后重新运行 ./install.sh。')
         return
+    ui.step(3, 4, '启动日志采集器')
     docker_ready()
     run(['docker', 'compose', 'config', '--quiet'])
     startup = compose_start_command(v)
@@ -134,7 +139,9 @@ def main():
     if len(states) != 1 or states[0].get('State') != 'running':
         raise RuntimeError('Fluent Bit 未持续运行，请检查 docker compose logs fluent-bit')
     run(['docker', 'compose', 'ps'])
-    print('采集端已启动。请追加一条业务日志，再到管理端按主机和项目查询，以确认文件读取链路。')
+    ui.step(4, 4, '完成')
+    ui.summary('采集端已启动', [('管理中心', v['OPS_HOST']), ('主机 / 项目', v['HOST_ID'] + ' / ' + v['PROJECT_ID']), ('日志目录', v['HOST_LOG_DIR'])])
+    ui.note('配置已自动保存；原配置已备份。请追加业务日志，到管理中心确认读取链路。')
 
 
 if __name__ == '__main__':

@@ -459,10 +459,17 @@ class AirgapBuilderTests(unittest.TestCase):
             path = source / filename
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('fixture')
+        for module in ('management', 'collector'):
+            vendor = source / module / 'scripts/vendor'
+            vendor.mkdir(parents=True, exist_ok=True)
+            (vendor / 'rich.whl').write_bytes(b'fixture wheel')
+            (vendor / 'manifest.json').write_text('[]')
         builder.copy_opskit(source, destination)
         files = sorted(p.relative_to(destination).as_posix() for p in destination.rglob('*') if p.is_file())
-        self.assertEqual(files, ['README.md', 'collector/compose.yaml', 'management/.env.example', 'management/compose.yaml',
-                                 'management/portal/vendor/LICENSE.txt', 'management/scripts/install.py'])
+        self.assertEqual(files, ['README.md', 'collector/compose.yaml', 'collector/scripts/vendor/manifest.json',
+                                 'collector/scripts/vendor/rich.whl', 'management/.env.example', 'management/compose.yaml',
+                                 'management/portal/vendor/LICENSE.txt', 'management/scripts/install.py',
+                                 'management/scripts/vendor/manifest.json', 'management/scripts/vendor/rich.whl'])
 
     def test_build_fails_before_docker_without_prerequisites(self):
         path = self.repo / 'opskit-delivery.json'

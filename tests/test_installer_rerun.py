@@ -112,7 +112,7 @@ class InstallerRerunTests(unittest.TestCase):
                     else:
                         management.main()
                 for key in management.PASSWORD_KEYS:
-                    self.assertEqual(output.getvalue().count(values[key]), int(failure is None and key != 'SPUG_DB_PASSWORD'))
+                    self.assertEqual(output.getvalue().count(values[key]), int(failure is None and key == 'OPS_ADMIN_PASSWORD'))
                 if not failure:
                     self.assertLess(events.index('pull'), events.index(startup))
                     self.assertLess(events.index(startup), events.index('check'))
@@ -122,10 +122,10 @@ class InstallerRerunTests(unittest.TestCase):
             values = management.configure({}, interactive=False)
         with contextlib.redirect_stdout(io.StringIO()) as output:
             management.show_credentials(values, ROOT / 'management/.workbench/hub.env', hub_only=True)
-        self.assertEqual(output.getvalue().count(values['NPM_ADMIN_PASSWORD']), 1)
+        self.assertNotIn(values['NPM_ADMIN_PASSWORD'], output.getvalue())
         self.assertEqual(output.getvalue().count(values['OPS_ADMIN_PASSWORD']), 1)
         for key in management.PASSWORD_KEYS:
-            if key not in ('NPM_ADMIN_PASSWORD', 'OPS_ADMIN_PASSWORD'):
+            if key != 'OPS_ADMIN_PASSWORD':
                 self.assertNotIn(values[key], output.getvalue())
 
 

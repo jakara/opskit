@@ -15,6 +15,8 @@ import subprocess
 import sys
 import tarfile
 
+import console_ui as ui
+
 from common import ROOT, ask, choose_configuration, compose_start_command, docker_ready, env_text, host, image_defaults, ipv4, load_env, password, port, powershell, prepare_images, run, save
 
 IMAGES = image_defaults({
@@ -85,48 +87,57 @@ def configure(existing, reconfigure=False, interactive=True, checkpoint=None, dr
     if draft:
         v.update(draft)
     if not existing or reconfigure or draft or any(key not in v for key in (*PASSWORD_KEYS, 'NPM_ADMIN_EMAIL', 'LOG_INGEST_HOST')):
-        print('\n管理中心配置：外层 Nginx 负责 HTTPS，本中心不生成或申请证书。')
-        prompt('OPS_PUBLIC_HOST', '外层 Nginx 使用的访问域名（不含协议和路径）', v.get('OPS_PUBLIC_HOST', 'ops.example.internal'), host)
+        if interactive:
+            ui.step(1, 6, '访问入口', '外层 Nginx 负责 HTTPS，OpsKit 不申请证书。有效输入会自动保存，退出后可继续。')
+        prompt('OPS_PUBLIC_HOST', '浏览器访问域名', v.get('OPS_PUBLIC_HOST', 'ops.example.internal'), host)
         prompt('OPS_PUBLIC_SCHEME', '浏览器最终使用的协议', v.get('OPS_PUBLIC_SCHEME', 'https'), lambda s: s in ('http', 'https'))
-        prompt('OPS_PUBLIC_PORT', '浏览器最终访问端口', v.get('OPS_PUBLIC_PORT', '443' if v['OPS_PUBLIC_SCHEME'] == 'https' else '80'), port)
-        prompt('OPSKIT_BIND_IP', '管理机 HTTP 监听 IPv4（外层代理在本机时用 127.0.0.1）', v.get('OPSKIT_BIND_IP', '127.0.0.1'), ipv4)
+        prompt('OPS_PUBLIC_PORT', '浏览器访问端口', v.get('OPS_PUBLIC_PORT', '443' if v['OPS_PUBLIC_SCHEME'] == 'https' else '80'), port)
+        prompt('OPSKIT_BIND_IP', '管理机监听 IPv4（外层代理在本机时用 127.0.0.1）', v.get('OPSKIT_BIND_IP', '127.0.0.1'), ipv4)
         prompt('OPSKIT_HTTP_PORT', '管理机 HTTP 端口', v.get('OPSKIT_HTTP_PORT', '80'), port)
-        prompt('NPM_BIND_IP', 'NPM 初始化与恢复端口监听 IPv4', v.get('NPM_BIND_IP', '127.0.0.1'), ipv4)
-        prompt('NPM_ADMIN_PORT', 'NPM 初始化与恢复端口', v.get('NPM_ADMIN_PORT', '8181'), port)
-        prompt('SPUG_HTTP_PORT', 'Spug 恢复端口（常规入口为 /spug/，不能与前两项重复）', v.get('SPUG_HTTP_PORT', '8081'),
-                                    lambda s: port(s) and s not in (v['OPSKIT_HTTP_PORT'], v['NPM_ADMIN_PORT']))
+        if interactive:
+            ui.step(2, 6, '统一登录', '只需一个运维账号即可进入全部内置工具；组件内部账号由 OpsKit 自动管理。')
+        prompt('OPS_ADMIN_USER', '统一运维账号', v.get('OPS_ADMIN_USER', 'operator'),
+               lambda s: bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,31}', s)))
+        # 已有内部账号保持原值，避免重配时改坏组件的原生登录。
+        v.setdefault('NPM_ADMIN_EMAIL', 'admin@example.internal')
+        v.setdefault('SPUG_ADMIN_USER', 'admin')
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,31}', v.get('LOG_AGENT_USER', '')) or v.get('LOG_AGENT_USER') == v['OPS_ADMIN_USER']:
+            v['LOG_AGENT_USER'] = 'logagent' if v['OPS_ADMIN_USER'] != 'logagent' else 'opskit-agent'
+        if interactive:
+            ui.note('密码要求：12～128 位，不含空白、美元符、引号和反斜杠；回车可自动生成。')
+        for key in PASSWORD_KEYS:
+            if not password(v.get(key, '')) or v[key].startswith('REPLACE_'):
+                if key == 'OPS_ADMIN_PASSWORD':
+                    prompt(key, '统一运维密码', secrets.token_hex(24), password, secret=True)
+                else:
+                    v[key] = secrets.token_hex(24)
+                    if checkpoint:
+                        checkpoint(v)
+        if interactive:
+            ui.step(3, 6, '日志接入', '采集器使用独立机器凭据，自动写入 collector.env，无需另设登录账号。')
         prompt('LOG_INGEST_HOST', '业务机连接管理机的内网 IP 或域名', v.get('LOG_INGEST_HOST', v['OPS_PUBLIC_HOST']), host)
         prompt('LOG_RETENTION_DAYS', '日志保留天数', v.get('LOG_RETENTION_DAYS', '14'), lambda s: s.isdigit() and 1 <= int(s) <= 3650)
-        prompt('NPM_ADMIN_EMAIL', 'NPM 管理员邮箱（仅作登录名，不发送邮件）', v.get('NPM_ADMIN_EMAIL', 'admin@example.internal'), lambda s: bool(re.fullmatch(r'[A-Za-z0-9_.+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}', s)))
-        for key, label, default in (
-                ('SPUG_ADMIN_USER', 'Spug 管理员用户名', 'admin'),
-                ('OPS_ADMIN_USER', '运维入口用户名', 'operator'),
-                ('LOG_AGENT_USER', '日志写入用户名', 'logagent')):
-            def valid_user(value):
-                if key == 'LOG_AGENT_USER' and value == v['OPS_ADMIN_USER']:
-                    print('运维访问和日志写入必须使用不同账户，请重新输入日志写入用户名。')
-                    return False
-                return bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,31}', value))
-            prompt(key, label, v.get(key, default), valid_user)
-        print('密码要求：12～128 位英文字母、数字或常用符号；不含空白、美元符、引号和反斜杠。')
-        for key, label in (
-                ('NPM_ADMIN_PASSWORD', 'NPM 管理员密码'),
-                ('SPUG_ADMIN_PASSWORD', 'Spug 初始管理员密码'),
-                ('DBX_PASSWORD', 'DBX 登录密码'),
-                ('OPS_ADMIN_PASSWORD', '运维入口密码'),
-                ('LOG_AGENT_PASSWORD', '日志写入密码')):
-            if not password(v.get(key, '')) or v[key].startswith('REPLACE_'):
-                prompt(key, label, secrets.token_hex(24), password, secret=True)
-        if not v.get('SPUG_DB_PASSWORD') or v['SPUG_DB_PASSWORD'].startswith('REPLACE_'):
-            v['SPUG_DB_PASSWORD'] = secrets.token_hex(24)
-            if checkpoint:
-                checkpoint(v)
+        if interactive:
+            ui.step(4, 6, '高级选项', '默认端口和镜像可直接使用；已有自定义值会保留。')
+        advanced = ask('是否调整恢复端口和镜像来源（y/n）', 'n', lambda s: s in ('y', 'n')) == 'y' if interactive else False
+        v.setdefault('NPM_BIND_IP', '127.0.0.1')
+        v.setdefault('NPM_ADMIN_PORT', '8181')
+        v.setdefault('SPUG_HTTP_PORT', '8081')
+        v.setdefault('OPSKIT_LOG_FORWARD_PORT', '24224')
+        if advanced:
+            prompt('NPM_BIND_IP', 'NPM 恢复端口监听 IPv4', v['NPM_BIND_IP'], ipv4)
+            prompt('NPM_ADMIN_PORT', 'NPM 恢复端口', v['NPM_ADMIN_PORT'], port)
+            prompt('SPUG_HTTP_PORT', 'Spug 恢复端口', v['SPUG_HTTP_PORT'], lambda s: port(s) and s not in (v['OPSKIT_HTTP_PORT'], v['NPM_ADMIN_PORT']))
+            prompt('OPSKIT_LOG_FORWARD_PORT', '内部日志接收端口', v['OPSKIT_LOG_FORWARD_PORT'], lambda s: port(s) and s not in (v['OPSKIT_HTTP_PORT'], v['NPM_ADMIN_PORT'], v['SPUG_HTTP_PORT']))
+        for key, image in IMAGES.items():
+            if advanced:
+                prompt(key, key + ' 镜像地址', v.get(key, image), lambda s: bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@-]+', s)))
+            else:
+                v.setdefault(key, image)
+        if checkpoint:
+            checkpoint(v)
     for key, image in IMAGES.items():
-        if key != 'FLUENTBIT_IMAGE' and (not existing or reconfigure or draft):
-            prompt(key, f'{key} 镜像地址（可填私有仓库或官方备用源）', v.get(key, image),
-                         lambda s: bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@-]+', s)))
-        else:
-            v.setdefault(key, image)
+        v.setdefault(key, image)
     v.setdefault('SPUG_HTTP_PORT', '8081')
     v.setdefault('OPSKIT_LOG_FORWARD_PORT', '24224')
     if v.get('HUB_ONLY') != 'true' and (not port(v['OPSKIT_LOG_FORWARD_PORT']) or v['OPSKIT_LOG_FORWARD_PORT'] in (
@@ -143,19 +154,17 @@ def public_url(v):
 
 
 def show_credentials(v, config, hub_only=False):
-    print('\n登录信息（本次安装完成后回显一次，请妥善保存）：')
-    print(f'NPM 管理员：{v["NPM_ADMIN_EMAIL"]}  密码：{v["NPM_ADMIN_PASSWORD"]}')
-    if hub_only:
-        print(f'运维入口：{v["OPS_ADMIN_USER"]}  密码：{v["OPS_ADMIN_PASSWORD"]}')
+    ui.summary('安装完成 · 请保存统一登录信息', [
+        ('工作台', public_url(v) + '/'),
+        ('统一运维账号', v['OPS_ADMIN_USER']),
+        ('统一运维密码', v['OPS_ADMIN_PASSWORD']),
+        ('配置与恢复凭据', config),
+        ('组件入口', '/npm/' if hub_only else '/spug/  /dbx/  /logs/  /npm/'),
+    ])
+    ui.note('组件内部账号及采集凭据已自动管理，保存在上述私密配置中；不需要逐个登录。')
+    ui.note('配置变更前的备份位于相应配置目录的 .backups/，已自动核验。')
     if not hub_only:
-        print(f'Spug 初始管理员：{v["SPUG_ADMIN_USER"]}  密码：{v["SPUG_ADMIN_PASSWORD"]}')
-        print(f'DBX 登录密码：{v["DBX_PASSWORD"]}')
-        print(f'运维入口：{v["OPS_ADMIN_USER"]}  密码：{v["OPS_ADMIN_PASSWORD"]}')
-        print(f'日志写入：{v["LOG_AGENT_USER"]}  密码：{v["LOG_AGENT_PASSWORD"]}')
-    print(f'凭据保存位置：{config}（已限制文件访问权限）')
-    if not hub_only:
-        print('Spug 数据库内部密码也保存在此文件，不单独回显。')
-    print('以上为配置中记录的凭据；若已在应用内修改账户或密码，以应用实际设置为准。')
+        ui.note('下一步：将 collector.env 交给每台业务机的采集端，不要分发管理端 .env。')
 
 
 def write_outputs(v):
@@ -321,7 +330,12 @@ def install_hub(http_port, configure_only=False, offline=False, reconfigure=Fals
                                         reinstall=lambda: clean_reinstall(config, configure_only, hub_only=True))
     previous = load_env(config)
     http_port = int(previous.get('OPSKIT_HTTP_PORT', '80')) if http_port is None else http_port
+    ui.step(1, 3, '精简管理端配置', '只运行 Hub 与 NPM；使用统一运维账号进入。')
     v = configure(previous, interactive=False)
+    if sys.stdin.isatty() and (not previous or reconfigure):
+        v['OPS_ADMIN_USER'] = ask('统一运维账号', v['OPS_ADMIN_USER'], lambda value: bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_.-]{0,31}', value)))
+        if not previous.get('OPS_ADMIN_PASSWORD'):
+            v['OPS_ADMIN_PASSWORD'] = ask('统一运维密码', v['OPS_ADMIN_PASSWORD'], password, secret=True)
     if reconfigure:
         http_port = int(ask('Hub HTTP 端口', str(http_port), port))
         v['NPM_ADMIN_PORT'] = ask('NPM 初始化与恢复端口', v['NPM_ADMIN_PORT'], lambda s: port(s) and s != str(http_port))
@@ -347,6 +361,7 @@ def install_hub(http_port, configure_only=False, offline=False, reconfigure=Fals
     if configure_only:
         print(f'Hub 配置已就绪：{directory}；运行 ./install.sh --hub-only 启动 NPM 和 Hub。')
         return
+    ui.step(2, 3, '启动工作台与代理')
     docker_ready()
     command = ['docker', 'compose', '--env-file', str(config), '-f', 'hub.compose.yaml']
     run(command + ['config', '--quiet'])
@@ -370,6 +385,7 @@ def install_hub(http_port, configure_only=False, offline=False, reconfigure=Fals
     suffix = '' if http_port == 80 else ':' + str(http_port)
     print(f'应用工作台已启动：http://127.0.0.1{suffix}/')
     print(f'NPM 管理界面：http://127.0.0.1{suffix}/npm/；登录信息保存于 {config}')
+    ui.step(3, 3, '完成')
     show_credentials(v, config, hub_only=True)
 
 
@@ -385,6 +401,7 @@ def main():
     configuration.add_argument('--reuse-config', action='store_true', help='明确复用已有配置，跳过选择菜单（适用于自动化）')
     args = parser.parse_args()
     os.umask(0o077)
+    ui.banner('管理中心安装向导')
     if args.hub_only or args.mode == 'development':
         if args.port is not None and not 1 <= args.port <= 65535:
             parser.error('Hub 端口须为 1～65535')
@@ -409,8 +426,9 @@ def main():
     if args.configure_only:
         write_outputs(v)
         progress.unlink(missing_ok=True)
-        print('配置阶段完成。准备好 Docker 后重新运行 ./install.sh 即可继续。')
+        ui.summary('配置已就绪', [('配置文件', ROOT / '.env'), ('下一步', '重新运行原安装命令，复用配置即可继续。')])
         return
+    ui.step(5, 6, '准备并启动组件', '离线模式仅核对本地镜像。' if args.offline else '逐项准备镜像并启动服务，失败时保留配置以便重试。')
     docker_ready()
     with installation_control() as recovered:
         v.update(recovered)
@@ -429,6 +447,7 @@ def main():
     start_discovery(control=True)
     from self_management import initialize as initialize_self
     initialize_self(v)
+    ui.step(6, 6, '验收与完成', '检查统一登录、组件入口和日志采集权限。')
     from check import check
     check(v)
     print(f'\n应用工作台已启动：{public_url(v)}/')
@@ -442,8 +461,8 @@ if __name__ == '__main__':
     try:
         main()
     except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError, tarfile.TarError) as exc:
-        print(f'安装未完成：{exc}', file=sys.stderr)
+        ui.error(f'安装未完成：{exc}')
         sys.exit(1)
     except (KeyboardInterrupt, EOFError):
-        print('\n安装已中止。已保存的配置可在重跑时继续使用。', file=sys.stderr)
+        ui.error('安装已中止；已确认的选项已保存，重跑可继续。')
         sys.exit(1)

@@ -18,7 +18,8 @@ try {
     Invoke-OpsKitLocation -Entry $PSCommandPath -Parameters $PSBoundParameters
     $python = Get-OpsKitPython -Offline:$Offline
     if (-not $Module) {
-        Write-Host "OpsKit 安装向导`n  1) 管理中心（Hub 及完整运维工具）`n  2) 日志采集端（Fluent Bit）`n  3) 精简管理端"
+        & $python -B "$PSScriptRoot/management/scripts/console_ui.py"
+        if ($LASTEXITCODE -ne 0) { throw '安装界面资源不可用。' }
         $defaultModule = & $python -B "$PSScriptRoot/management/scripts/options.py" read $PSScriptRoot
         if ($LASTEXITCODE -ne 0) { throw '无法读取上次安装模块。' }
         $Module = Read-Host "请选择模块 [1/2/3，回车采用 $defaultModule]"

@@ -599,7 +599,8 @@ def copy_opskit(source, destination):
                 ui_asset = path.is_relative_to(source / 'management/ui') and (
                     path.suffix in {'.json', '.png', '.jpg', '.xml', '.xlsx', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.webmanifest', '.txt'} or
                     path.name == 'opskit-corresponding-source.tar.gz')
-                if ui_asset or vendor_asset or path.suffix in extensions or name == '.env.example':
+                cli_asset = path.is_relative_to(source / module / 'scripts/vendor') and path.suffix in {'.whl', '.json', '.md'}
+                if ui_asset or vendor_asset or cli_asset or path.suffix in extensions or name == '.env.example':
                     paths.append(path)
     for path in sorted(paths):
         relative = path.relative_to(source).as_posix()

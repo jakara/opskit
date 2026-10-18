@@ -11,7 +11,7 @@ if [[ "$MODULE" == -* && "$MODULE" != --help && "$MODULE" != -h ]]; then MODULE=
 . "$ROOT/management/scripts/bootstrap.sh"
 opskit_find_python
 if [[ -z "$MODULE" ]]; then
-  printf 'OpsKit 安装向导\n  1) 管理中心（Hub 及完整运维工具）\n  2) 日志采集端（Fluent Bit，每台业务机安装一次）\n  3) 精简管理端\n'
+  "$OPSKIT_PYTHON" -B "$ROOT/management/scripts/console_ui.py"
   DEFAULT_MODULE="$("$OPSKIT_PYTHON" -B "$ROOT/management/scripts/options.py" read "$ROOT")"
   printf '请选择模块 [1/2/3，回车采用 %s]：' "$DEFAULT_MODULE"
   read -r MODULE

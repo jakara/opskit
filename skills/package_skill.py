@@ -27,7 +27,8 @@ def copy_clean(source, destination, runtime_only=False):
             path.suffix in {'.txt', '.mjs', '.bcmap', '.pfb', '.ttf', '.wasm'} or
             path.name.upper().startswith(('LICENSE', 'COPYING', 'NOTICE')))
         ui_asset = relative.parts[0] == 'ui' and (path.suffix in {'.json', '.png', '.jpg', '.xml', '.xlsx', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.webmanifest', '.txt'} or path.name == 'opskit-corresponding-source.tar.gz')
-        if runtime_only and not ui_asset and not vendor_asset and path.name != '.env.example' and path.suffix not in {
+        cli_asset = relative.parts[:2] == ('scripts', 'vendor') and path.suffix in {'.whl', '.json', '.md'}
+        if runtime_only and not ui_asset and not vendor_asset and not cli_asset and path.name != '.env.example' and path.suffix not in {
                 '.py', '.sh', '.ps1', '.cmd', '.md', '.yaml', '.yml', '.html', '.css', '.js', '.conf'}:
             continue
         if path.name.startswith('.env') and path.name != '.env.example':
