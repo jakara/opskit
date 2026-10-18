@@ -39,6 +39,29 @@ function fixture(file, ids, responses, search='') {
 const bridgeIDs=['component-panel','component-title','component-status','component-error','component-retry','component-native-actions','component-native'];
 const spug={id:'1',token:'opaque-spug-token',nickname:'管理员',is_supper:'true',permissions:'[]',login_type:'default'};
 (async()=>{
+  if(group==='entries') {
+    const f=fixture('app.js',[],[]);
+    f.context.document.getElementById=id=>f.nodes[id]||(f.nodes[id]=element());
+    f.context.document.createElement=tag=>({tag,children:[],append(...children){this.children.push(...children)},addEventListener(){}});
+    f.context.window.opskitFetch=async()=>{throw new Error('fixture skips discovery')};
+    f.context.setInterval=()=>{};
+    f.run();await tick();
+    for(const [id,url,builtin,expected] of [
+      ['dbx','/dbx/',true,'/auth/open?component=dbx&next=%2Fdbx%2F'],
+      ['spug','/spug/home?task=1#history',true,'/auth/open?component=spug&next=%2Fspug%2Fhome%3Ftask%3D1%23history'],
+      ['npm','https://ops.example/npm/',true,'/auth/open?component=npm&next=%2Fnpm%2F'],
+      ['logs','/logs/select/vmui/',true,'/logs/select/vmui/'],
+      ['dbx','https://custom.example/dbx/',true,'https://custom.example/dbx/'],
+      ['dbx','/other/',true,'/other/'],
+      ['dbx','/dbx/',false,'/dbx/'],
+    ]) {
+      f.context.testEntry={id,url,builtin,name:'工具',group:'分组',description:''};
+      const card=vm.runInContext('entryCard(testEntry)',f.context);
+      const action=card.children.find(child=>child.className==='entry-bottom').children[0];
+      assert.equal(action.href,expected,'entry must establish native session before cached HTML: '+url);
+      assert.equal(action.target,'_blank');
+    }
+  }
   if(group==='bridge') {
     for(const [component,storage,redirect] of [['spug',spug,'/spug/home'],['npm',{authentications:'opaque-npm-session'},'/npm/'],['dbx',{},'/dbx/']]) {
       const f=fixture('component.js',bridgeIDs,[{status:200,data:{storage,redirect}}],'?component='+component);
@@ -142,6 +165,9 @@ class PortalFrontendTests(unittest.TestCase):
 
     def test_component_bridge_real_success_retry_and_expiry_behavior(self):
         self.run_check('bridge')
+
+    def test_builtin_entries_visit_bridge_before_possibly_cached_native_html(self):
+        self.run_check('entries')
 
     def test_storage_and_redirect_trust_boundaries(self):
         self.run_check('boundaries')

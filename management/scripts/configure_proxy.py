@@ -21,6 +21,10 @@ SESSION_GATE = '''# BEGIN OpsKit 站内登录
 auth_basic off;
 auth_request /_opskit_auth;
 error_page 401 = @opskit_signin;
+# 受保护的组件响应不得由浏览器缓存后绕过会话校验与登录桥。
+proxy_hide_header Cache-Control;
+proxy_hide_header Expires;
+add_header Cache-Control "no-store" always;
 location = /_opskit_auth {
     internal;
     auth_request off;

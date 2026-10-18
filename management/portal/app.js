@@ -81,11 +81,15 @@ function entryCard(item) {
   name.append(node('h3', '', item.name), node('div', 'group-label', item.builtin ? 'OPSKIT · 内置工具' : item.group));
   top.append(node('span', 'app-icon', item.name.slice(0, 1)), name);
   const bottom = node('div', 'entry-bottom');
-  bottom.append(link('打开应用 ↗', item.url), button('编辑', 'text-button', () => edit(item)));
+  const url = new URL(item.url, location.origin);
+  // 重装后组件 HTML 可能仍在浏览器缓存，入口必须先建立新的原生会话。
+  const bridge = item.builtin && ['spug', 'npm', 'dbx'].includes(item.id) &&
+    url.origin === location.origin && url.pathname.startsWith('/' + item.id + '/');
+  const opening = bridge ? '/auth/open?component=' + item.id + '&next=' + encodeURIComponent(url.pathname + url.search + url.hash) : item.url;
+  bottom.append(link('打开应用 ↗', opening), button('编辑', 'text-button', () => edit(item)));
   if (!item.builtin) bottom.append(button('移除', 'text-button danger', () => remove(item)));
   card.append(top, node('p', '', item.description || item.url));
   if (item.builtin) {
-    const url = new URL(item.url, location.origin);
     card.append(node('div', 'builtin-address', '端口 ' + (url.port || (url.protocol === 'https:' ? '443' : '80')) + ' · ' + url.pathname));
   }
   card.append(bottom);
