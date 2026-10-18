@@ -20,12 +20,12 @@ discovery = __import__('discovery')
 
 
 class WorkbenchTests(unittest.TestCase):
-    def test_spug_check_uses_its_port_and_rejects_wrong_homepage(self):
+    def test_spug_check_uses_prefix_and_rejects_wrong_homepage(self):
         check = module('check_routes', ROOT / 'management/scripts/check.py')
         with patch.object(check, 'request', side_effect=[(200, b'OpsKit Hub'), (200, b'<title>Spug</title>')]) as request, patch.object(check.time, 'sleep'), contextlib.redirect_stdout(None):
             check.check_spug({'SPUG_HTTP_PORT': '8081', 'OPSKIT_HTTP_PORT': '80'})
         self.assertEqual(request.call_count, 2)
-        self.assertTrue(all(call.args[0]['OPSKIT_HTTP_PORT'] == '8081' for call in request.call_args_list))
+        self.assertTrue(all(call.args[0]['OPSKIT_HTTP_PORT'] == '80' and call.args[1] == '/spug/' for call in request.call_args_list))
 
     def test_url_validation(self):
         for url in ('javascript:alert(1)', '//evil.example', '/\\evil', 'https://user:password@example.com', 'http://[bad', '/has space'):
@@ -210,11 +210,30 @@ class WorkbenchTests(unittest.TestCase):
                    {'id': 'dbx', 'name': '数据库', 'group': '自定义分组', 'url': 'https://custom.example/db'}]
             path.write_text(json.dumps(old))
             catalog = workbench.Catalog(tmp, seed_tools=True)
-            self.assertEqual(catalog.read()[0]['url'], 'http://127.0.0.1:8081/')
+            self.assertEqual(catalog.read()[0]['url'], '/spug/')
             self.assertEqual(catalog.read()[1], old[1])
             backup = next((Path(tmp) / 'backups').glob('*.json'))
             self.assertEqual(json.loads(backup.read_text()), old)
             self.assertEqual(len(catalog.read()), 4)
+
+    def test_prefix_routes_separate_native_api_auth_and_preserve_custom_catalog(self):
+        routes = proxy.console_routes()
+        api = routes.split('location ^~ /npm/api/ {', 1)[1].split('\n}', 1)[0]
+        self.assertIn('auth_basic off;', api)
+        self.assertIn('return 401;', api)
+        self.assertIn('location = /npm/api/tokens {', routes)
+        self.assertIn('Authorization $http_authorization;', api)
+        self.assertIn('http://127.0.0.1:81/api/;', api)
+        self.assertIn('http://spug:80/;', routes)
+        self.assertNotIn('spug:80', proxy.console_routes(True))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'entries.json'
+            old = [{'id': 'spug', 'name': 'Spug', 'group': '工具', 'url': 'http://127.0.0.1:8082/'},
+                   {'id': 'npm', 'name': 'NPM', 'group': '工具', 'url': 'https://custom.example/npm/'}]
+            path.write_text(json.dumps(old))
+            values = workbench.Catalog(tmp).read()
+            self.assertEqual(values[0]['url'], '/spug/')
+            self.assertEqual(values[1], old[1])
 
     def test_proxy_upgrade_preserves_custom_rules_and_backs_up(self):
         old = 'auth_basic "OpsKit";\nlocation /hub/ {\n    alias /opskit/portal/;\n    index index.html;\n}\nlocation /custom { return 204; }'

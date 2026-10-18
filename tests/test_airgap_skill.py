@@ -1,4 +1,5 @@
 """分发包独立性和基础安装器镜像默认值的实际集成检查。"""
+import hashlib
 import importlib.util
 import json
 import os
@@ -49,6 +50,11 @@ class SkillDistributionTests(unittest.TestCase):
             self.assertIn('management/scripts/install.py', provenance['sha256'])
             self.assertTrue((runtime / 'management/documents/builtin/management/README.md').is_file())
             self.assertTrue(provenance['documentation_sha256'])
+            ui = runtime / 'management/ui'
+            for component, assets in json.loads((ui / 'static-hashes.json').read_text()).items():
+                for relative, expected in assets.items():
+                    self.assertEqual(hashlib.sha256((ui / component / relative).read_bytes()).hexdigest(), expected)
+            self.assertFalse((runtime / 'tests').exists())
             self.assertFalse(any(key.startswith('management/documents/') for key in provenance['sha256']))
             self.assertEqual((runtime / 'management/scripts/common.py').read_bytes(),
                              (ROOT / 'management/scripts/common.py').read_bytes())

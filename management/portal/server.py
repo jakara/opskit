@@ -165,13 +165,13 @@ def entry_values(data):
 def default_entries():
     entries = [
         {'id': 'spug', 'name': '主机与发布 · Spug', 'group': '运维工具',
-         'url': 'http://127.0.0.1:' + os.environ.get('SPUG_HTTP_PORT', '8081') + '/',
-         'description': '主机纳管、SSH、部署发布与定时任务；独立端口访问'},
+         'url': '/spug/',
+         'description': '主机纳管、应用配置与内置服务健康巡检'},
         {'id': 'dbx', 'name': '数据库 · DBX', 'group': '运维工具', 'url': '/dbx/', 'description': '连接业务数据库，查询与维护数据'},
         {'id': 'logs', 'name': '集中日志 · VictoriaLogs', 'group': '运维工具', 'url': '/logs/select/vmui/', 'description': '跨主机日志查询与故障排查'},
         {'id': 'npm', 'name': '代理配置 · NPM', 'group': '运维工具',
-         'url': 'http://127.0.0.1:' + os.environ.get('NPM_ADMIN_PORT', '8181'),
-         'description': '默认通过本机或 SSH 隧道访问；可编辑为已有的管理地址'},
+         'url': '/npm/',
+         'description': '统一入口的反向代理与访问配置'},
     ]
     components = os.environ.get('OPSKIT_COMPONENTS', ','.join(BUILTIN_IDS)).split(',')
     return [entry for entry in entries if entry['id'] in components]
@@ -188,8 +188,13 @@ class Catalog:
         entries = self.read()
         original = json.dumps(entries, ensure_ascii=False)
         for entry in entries:
-            if entry['id'] == 'spug' and entry['url'] == '/':
-                entry['url'] = 'http://127.0.0.1:' + os.environ.get('SPUG_HTTP_PORT', '8081') + '/'
+            if entry['id'] in ('npm', 'spug'):
+                name = entry['id']
+                ports = ({os.environ.get('SPUG_HTTP_PORT', '8081'), '8081', '8082'} if name == 'spug'
+                         else {os.environ.get('NPM_ADMIN_PORT', '8181'), '8181'})
+                old = {f'http://{host}:{port}' for host in ('localhost', '127.0.0.1') for port in ports}
+                if entry['url'].rstrip('/') in old or (name == 'spug' and entry['url'] == '/'):
+                    entry['url'] = '/' + name + '/'
         if seed_tools:
             ids = {entry['id'] for entry in entries}
             entries.extend(entry for entry in default_entries() if entry['id'] not in ids)

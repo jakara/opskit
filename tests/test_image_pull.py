@@ -84,7 +84,9 @@ class ImagePullTests(unittest.TestCase):
                     patch.object(management, 'start_discovery', side_effect=lambda: calls.append(['discovery'])), \
                     patch.object(common.subprocess, 'run', side_effect=docker), \
                     patch.dict(sys.modules, {'configure_proxy': SimpleNamespace(initialize=initialize),
-                                             'check': SimpleNamespace(check=check)}), \
+                                             'check': SimpleNamespace(check=check),
+                                             'verify_ui': SimpleNamespace(verify=Mock()),
+                                             'self_management': SimpleNamespace(initialize=Mock())}), \
                     patch.object(sys, 'argv', ['install.py', '--reuse-config']), patch.dict(os.environ, {}, clear=True):
                 management.main()
             saved = common.load_env(root / '.env')

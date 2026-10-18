@@ -7,12 +7,14 @@ services:
       service: workbench
     environment:
       OPSKIT_COMPONENTS: npm
+    logging: {driver: local, options: {max-size: 10m, max-file: "3"}}
     volumes:
       - ./.workbench/hub:/data
   proxy-manager:
     extends:
       file: compose.yaml
       service: proxy-manager
+    logging: {driver: local, options: {max-size: 10m, max-file: "3"}}
 networks:
   management:
     driver: bridge

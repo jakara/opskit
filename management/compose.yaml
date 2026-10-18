@@ -1,10 +1,23 @@
 name: opskit
 
+x-internal-logging: &internal-logging
+  driver: fluentd
+  options:
+    fluentd-address: "127.0.0.1:${OPSKIT_LOG_FORWARD_PORT:-24224}"
+    fluentd-async: "true"
+    fluentd-sub-second-precision: "true"
+    labels: "opskit.service"
+    tag: opskit
+    mode: non-blocking
+    max-buffer-size: 16m
+
 # 仅部署在管理机；外层 Nginx 终止 HTTPS，本模块只提供 HTTP。
 services:
   workbench:
     image: ${WORKBENCH_IMAGE:-m.daocloud.io/docker.io/library/python:3.12-alpine}
     restart: unless-stopped
+    labels: {opskit.service: workbench}
+    logging: *internal-logging
     command: ["python", "-u", "/app/server.py", "--bind", "0.0.0.0", "--port", "8090", "--data", "/data", "--discovery-file", "/discovery/state.json", "--seed-tools", "--documents-dir", "/documents"]
     environment:
       NPM_ADMIN_PORT: ${NPM_ADMIN_PORT:-8181}
@@ -24,6 +37,8 @@ services:
   proxy-manager:
     image: ${NPM_IMAGE:-m.daocloud.io/docker.io/jc21/nginx-proxy-manager:2.16.0}
     restart: unless-stopped
+    labels: {opskit.service: proxy-manager}
+    logging: *internal-logging
     depends_on:
       workbench:
         condition: service_healthy
@@ -39,11 +54,14 @@ services:
       # NPM 镜像启动时要求挂载该目录；本包不申请证书，也不开放 443。
       - npm-cert-store:/etc/letsencrypt
       - ./portal:/opskit/portal:ro
+      - ./ui/npm:/app/frontend:ro
     networks: [management]
 
   spug:
     image: ${SPUG_IMAGE:-ghcr.io/openspug/spug:4.1}
     restart: unless-stopped
+    labels: {opskit.service: spug}
+    logging: *internal-logging
     ports:
       - "${OPSKIT_BIND_IP:-127.0.0.1}:${SPUG_HTTP_PORT:-8081}:80"
     environment:
@@ -57,6 +75,7 @@ services:
       SPUG_ADMIN_PASSWORD: ${SPUG_ADMIN_PASSWORD:?请先运行安装向导}
     volumes:
       - spug-data:/data
+      - ./ui/spug:/opt/spug/spug_web/build:ro
     depends_on:
       spugdb:
         condition: service_healthy
@@ -65,6 +84,8 @@ services:
   spugdb:
     image: ${MARIADB_IMAGE:-m.daocloud.io/docker.io/library/mariadb:10.11}
     restart: unless-stopped
+    labels: {opskit.service: spugdb}
+    logging: *internal-logging
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     environment:
       MARIADB_DATABASE: spug
@@ -84,6 +105,8 @@ services:
   dbx:
     image: ${DBX_IMAGE:-docker.cnb.cool/dbxio.com/dbx:0.6.40}
     restart: unless-stopped
+    labels: {opskit.service: dbx}
+    logging: *internal-logging
     environment:
       DBX_PASSWORD: ${DBX_PASSWORD:?请先运行安装向导}
       DBX_DISABLE_PASSWORD: "false"
@@ -99,12 +122,33 @@ services:
   victorialogs:
     image: ${VICTORIALOGS_IMAGE:-m.daocloud.io/docker.io/victoriametrics/victoria-logs:v1.53.0}
     restart: unless-stopped
+    labels: {opskit.service: victorialogs}
+    logging: *internal-logging
     command:
       - -storageDataPath=/victoria-logs-data
       - -retentionPeriod=${LOG_RETENTION_DAYS:-14}d
       - -http.pathPrefix=/logs
     volumes:
       - vlogs-data:/victoria-logs-data
+    networks: [management]
+
+  internal-logs:
+    image: ${FLUENTBIT_IMAGE:-m.daocloud.io/docker.io/fluent/fluent-bit:5.1.4}
+    restart: unless-stopped
+    # 采集器自身日志保留在 Docker，避免把发送故障再送回自身形成循环。
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+    environment:
+      HOST_ID: ${OPS_PUBLIC_HOST:-ops.example.internal}
+    ports:
+      - "127.0.0.1:${OPSKIT_LOG_FORWARD_PORT:-24224}:24224"
+    volumes:
+      - ./internal-logs.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - internal-logs-data:/fluent-bit/state
+      - npm-data:/sources/npm:ro
+      - spug-data:/sources/spug:ro
+    depends_on: [victorialogs]
     networks: [management]
 
 networks:
@@ -120,3 +164,4 @@ volumes:
   dbx-data:
   dbx-backups:
   vlogs-data:
+  internal-logs-data:

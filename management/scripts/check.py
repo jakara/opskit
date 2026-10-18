@@ -28,18 +28,18 @@ def request(v, path, credential=None, data=None):
 
 
 def check_spug(v):
-    target = dict(v, OPSKIT_HTTP_PORT=v['SPUG_HTTP_PORT'])
+    operator = ('OPS_ADMIN_USER', 'OPS_ADMIN_PASSWORD')
     deadline = time.monotonic() + 180
     while True:
         try:
-            code, page = request(target, '/')
+            code, page = request(v, '/spug/', operator)
         except (URLError, OSError):
             code, page = 0, b''
         if code == 200 and b'<title>Spug</title>' in page:
-            print('通过：Spug 独立端口入口')
+            print('通过：Spug 子路径入口')
             return
         if time.monotonic() >= deadline:
-            raise RuntimeError(f'Spug 独立端口 {v["SPUG_HTTP_PORT"]} 未就绪，HTTP {code}')
+            raise RuntimeError(f'Spug /spug/ 未就绪，HTTP {code}')
         time.sleep(2)
 
 
@@ -48,7 +48,7 @@ def check(v):
     run(['docker', 'compose', 'exec', '-T', 'proxy-manager', 'nginx', '-t'])
     operator = ('OPS_ADMIN_USER', 'OPS_ADMIN_PASSWORD')
     collector = ('LOG_AGENT_USER', 'LOG_AGENT_PASSWORD')
-    for path in ('/', '/hub/api/state', '/dbx/', '/logs/select/vmui/'):
+    for path in ('/', '/hub/api/state', '/npm/', '/spug/', '/dbx/', '/logs/select/vmui/'):
         deadline = time.monotonic() + 180
         while True:
             try:
@@ -68,13 +68,27 @@ def check(v):
     _, homepage = request(v, '/', operator)
     if b'OpsKit' not in homepage or b'id="builtin-section"' not in homepage:
         raise RuntimeError('根路径没有返回 Hub 页面')
-    _, state = request(v, '/hub/api/state', operator)
-    discovered = json.loads(state)
-    if discovered.get('api_version') != 1 or not discovered.get('discovered_at'):
-        raise RuntimeError('Hub 未收到宿主机发现结果，请检查发现进程')
-    if discovered.get('docker_error') or discovered.get('http_error'):
-        raise RuntimeError('Hub 发现异常：' + str(discovered.get('docker_error') or discovered.get('http_error')))
+    deadline = time.monotonic() + 60
+    while True:
+        _, state = request(v, '/hub/api/state', operator)
+        discovered = json.loads(state)
+        if (discovered.get('api_version') == 1 and discovered.get('discovered_at') and
+                not discovered.get('docker_error') and not discovered.get('http_error')):
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Hub 尚未收到有效宿主机发现结果，请检查发现进程')
+        time.sleep(2)
     check_spug(v)
+    from configure_proxy import API
+    target = v['OPSKIT_BIND_IP'] if v['OPSKIT_BIND_IP'] != '0.0.0.0' else '127.0.0.1'
+    api = API(f'http://{target}:{v["OPSKIT_HTTP_PORT"]}/npm/api')
+    api.token = api.call('/tokens', {'identity': v['NPM_ADMIN_EMAIL'], 'secret': v['NPM_ADMIN_PASSWORD']})['token']
+    if api.call('/users/me').get('email') != v['NPM_ADMIN_EMAIL']:
+        raise RuntimeError('NPM 子路径登录与用户查询未通过')
+    if request(v, '/npm/api/users/me')[0] != 401:
+        raise RuntimeError('NPM API 未阻止缺少自身登录凭据的访问')
+    if request(v, '/npm/api/users/me', operator)[0] != 401:
+        raise RuntimeError('NPM API 错误地将入口账户当成 NPM 登录凭据')
     insert = '/logs/insert/jsonline?_stream_fields=project,host,app,env&_msg_field=log&_time_field=date'
     # 空批次验证写入权限，避免检查脚本向业务日志写入测试记录。
     for credential, expected in ((None, 401), (operator, 401), (collector, 200)):

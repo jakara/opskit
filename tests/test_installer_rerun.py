@@ -100,7 +100,9 @@ class InstallerRerunTests(unittest.TestCase):
                         patch.object(management, 'prepare_images', side_effect=prepare), \
                         patch.object(management, 'run', side_effect=lambda args: events.append(args)), \
                         patch.dict(sys.modules, {'configure_proxy': SimpleNamespace(initialize=Mock()),
-                                                 'check': SimpleNamespace(check=check)}), \
+                                                 'check': SimpleNamespace(check=check),
+                                                 'verify_ui': SimpleNamespace(verify=Mock()),
+                                                 'self_management': SimpleNamespace(initialize=Mock())}), \
                         patch.object(sys, 'argv', ['install.py']), contextlib.redirect_stdout(output):
                     if failure:
                         with self.assertRaises(RuntimeError):

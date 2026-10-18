@@ -28,7 +28,7 @@ PARAM = re.compile(r'^[A-Z][A-Z0-9_]*$')
 IMAGE_ID = re.compile(r'^sha256:[0-9a-f]{64}$')
 SECRET = re.compile(r'(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|PRIVATE_KEY)', re.I)
 IMAGE_KEYS = {
-    'management': ['WORKBENCH_IMAGE', 'NPM_IMAGE', 'SPUG_IMAGE', 'MARIADB_IMAGE', 'DBX_IMAGE', 'VICTORIALOGS_IMAGE'],
+    'management': ['WORKBENCH_IMAGE', 'NPM_IMAGE', 'SPUG_IMAGE', 'MARIADB_IMAGE', 'DBX_IMAGE', 'VICTORIALOGS_IMAGE', 'FLUENTBIT_IMAGE'],
     'collector': ['FLUENTBIT_IMAGE'],
     'hub': ['WORKBENCH_IMAGE', 'NPM_IMAGE'],
 }
@@ -596,7 +596,10 @@ def copy_opskit(source, destination):
                 vendor_asset = path.is_relative_to(source / 'management/portal/vendor') and (
                     path.suffix in {'.mjs', '.bcmap', '.pfb', '.ttf', '.wasm'} or
                     path.name.upper().startswith(('LICENSE', 'COPYING', 'NOTICE')))
-                if vendor_asset or path.suffix in extensions or name == '.env.example':
+                ui_asset = path.is_relative_to(source / 'management/ui') and (
+                    path.suffix in {'.json', '.png', '.jpg', '.xml', '.xlsx', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.webmanifest', '.txt'} or
+                    path.name == 'opskit-corresponding-source.tar.gz')
+                if ui_asset or vendor_asset or path.suffix in extensions or name == '.env.example':
                     paths.append(path)
     for path in sorted(paths):
         relative = path.relative_to(source).as_posix()

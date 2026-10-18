@@ -1,0 +1,349 @@
+--- a/spug_web/src/libs/history.js
++++ b/spug_web/src/libs/history.js
+@@ -5,4 +5,4 @@
+  */
+ import {createBrowserHistory} from 'history';
+ 
+-export default createBrowserHistory()
++export default createBrowserHistory({basename: "/spug"})
+--- a/spug_web/src/libs/http.js
++++ b/spug_web/src/libs/http.js
+@@ -42,6 +42,7 @@
+ http.interceptors.request.use(request => {
+   request.isInternal = request.url.startsWith('/api/');
+   if (request.isInternal) {
++    request.url = `/spug${request.url}`;
+     request.headers['X-Token'] = X_TOKEN;
+     request.headers['X-Language'] = langMode
+   }
+--- a/spug_web/src/layout/Notification.js
++++ b/spug_web/src/layout/Notification.js
+@@ -65,7 +65,7 @@
+   function listen() {
+     if (!X_TOKEN) return;
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+-    ws = new WebSocket(`${protocol}//${window.location.host}/api/ws/notify/?x-token=${X_TOKEN}`);
++    ws = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/notify/?x-token=${X_TOKEN}`);
+     ws.onopen = () => ws.send('ok');
+     ws.onmessage = e => {
+       if (e.data !== 'pong') {
+--- a/spug_web/src/layout/Header.js
++++ b/spug_web/src/layout/Header.js
+@@ -31,7 +31,7 @@
+   }
+ 
+   function openTerminal() {
+-    window.open('/ssh')
++    window.open('/spug/ssh')
+   }
+ 
+   const userMenu = {
+@@ -81,6 +81,7 @@
+         </div>
+       </div>
+       <Notification/>
++      <a href="/spug/opskit-corresponding-source.tar.gz" style={{marginRight: 16}}>源码与修改</a>
+       <AuthDiv className={styles.terminal} auth="host.console.view|host.console.list" onClick={openTerminal}>
+         <CodeOutlined style={{fontSize: 16}}/>
+       </AuthDiv>
+--- a/spug_web/src/pages/host/Import.js
++++ b/spug_web/src/pages/host/Import.js
+@@ -58,7 +58,7 @@
+       footer={null}>
+       <Form hidden={token} labelCol={{span: 6}} wrapperCol={{span: 14}}>
+         <Form.Item label={t('模板下载')} extra={t('请下载使用该模板填充数据后导入')}>
+-          <a href="/resource/主机导入模板.xlsx">{t('主机导入模板.xlsx')}</a>
++          <a href="/spug/resource/主机导入模板.xlsx">{t('主机导入模板.xlsx')}</a>
+         </Form.Item>
+         <Form.Item required label={t('选择分组')}>
+           <Cascader
+--- a/spug_web/src/pages/host/Sync.js
++++ b/spug_web/src/pages/host/Sync.js
+@@ -15,7 +15,7 @@
+   useEffect(() => {
+     let index = 0;
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/host/${props.token}/?x-token=${X_TOKEN}`);
++    const socket = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/host/${props.token}/?x-token=${X_TOKEN}`);
+     socket.onopen = () => socket.send(String(index));
+     socket.onmessage = e => {
+       if (e.data === 'pong') {
+--- a/spug_web/src/pages/host/index.js
++++ b/spug_web/src/pages/host/index.js
+@@ -25,7 +25,7 @@
+   }, [])
+ 
+   function openTerminal() {
+-    window.open('/ssh')
++    window.open('/spug/ssh')
+   }
+ 
+   return (
+--- a/spug_web/src/pages/dashboard/StatisticCard.js
++++ b/spug_web/src/pages/dashboard/StatisticCard.js
+@@ -32,7 +32,7 @@
+               title={t('应用')}
+               value={res.app}
+               suffix={<span style={{fontSize: 16}}>{t('个')}</span>}
+-              formatter={v => <a href="/deploy/app">{v}</a>}/>
++              formatter={v => <a href="/spug/deploy/app">{v}</a>}/>
+           </Card>
+         </Col>
+         <Col span={6}>
+@@ -41,7 +41,7 @@
+               title={t('主机')}
+               value={res.host}
+               suffix={<span style={{fontSize: 16}}>{t('台')}</span>}
+-              formatter={v => <a href="/host">{v}</a>}/>
++              formatter={v => <a href="/spug/host">{v}</a>}/>
+           </Card>
+         </Col>
+         <Col span={6}>
+@@ -50,7 +50,7 @@
+               title={t('任务')}
+               value={res.task}
+               suffix={<span style={{fontSize: 16}}>{t('个')}</span>}
+-              formatter={v => <a href="/schedule">{v}</a>}/>
++              formatter={v => <a href="/spug/schedule">{v}</a>}/>
+           </Card>
+         </Col>
+         <Col span={6}>
+@@ -59,7 +59,7 @@
+               title={t('监控')}
+               value={res['detection']}
+               suffix={<span style={{fontSize: 16}}>{t('项')}</span>}
+-              formatter={v => <a href="/monitor">{v}</a>}/>
++              formatter={v => <a href="/spug/monitor">{v}</a>}/>
+           </Card>
+         </Col>
+       </Row>
+--- a/spug_web/src/pages/ssh/Terminal.js
++++ b/spug_web/src/pages/ssh/Terminal.js
+@@ -34,7 +34,7 @@
+     term.open(container.current);
+     term.write('WebSocket connecting ... ');
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/ssh/${props.id}/?x-token=${X_TOKEN}`);
++    const socket = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/ssh/${props.id}/?x-token=${X_TOKEN}`);
+     socket.onmessage = e => term.write(e.data)
+     socket.onopen = () => {
+       term.write('ok')
+--- a/spug_web/src/pages/ssh/index.js
++++ b/spug_web/src/pages/ssh/index.js
+@@ -228,9 +228,10 @@
+   return hasPermission('host.console.view|host.console.list') ? (
+     <div className={styles.container} onMouseUp={() => posX = 0} onMouseMove={handleMouseMove}>
+       <div className={styles.sider} style={{width}}>
+-        <a className={styles.logo} href="/host" target="_blank">
++        <a className={styles.logo} href="/spug/host" target="_blank">
+           <img src={LogoSpugText} alt="logo"/>
+         </a>
++        <a href="/spug/opskit-corresponding-source.tar.gz" style={{display: "block", textAlign: "center"}}>源码与修改</a>
+         <div className={styles.hosts}>
+           <Spin spinning={fetching}>
+             <Input allowClear className={styles.search} prefix={<SearchOutlined style={{color: '#999'}}/>}
+--- a/spug_web/src/pages/ssh/FileManager.js
++++ b/spug_web/src/pages/ssh/FileManager.js
+@@ -172,7 +172,7 @@
+ 
+   _updatePercent = token => {
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+-    this.socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/subscribe/${token}/?x-token=${X_TOKEN}`);
++    this.socket = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/subscribe/${token}/?x-token=${X_TOKEN}`);
+     this.socket.onopen = () => this.socket.send('ok');
+     this.socket.onmessage = e => {
+       if (e.data === 'pong') {
+--- a/spug_web/src/pages/exec/transfer/Output.js
++++ b/spug_web/src/pages/exec/transfer/Output.js
+@@ -56,7 +56,7 @@
+ 
+   useEffect(() => {
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/subscribe/${props.token}/?x-token=${X_TOKEN}`);
++    const socket = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/subscribe/${props.token}/?x-token=${X_TOKEN}`);
+     socket.onopen = () => {
+       const message = '\r\x1b[K\x1b[36m### Waiting for scheduling ...\x1b[0m'
+       for (let key of Object.keys(store.outputs)) {
+@@ -106,7 +106,7 @@
+   }
+ 
+   function openTerminal(key) {
+-    window.open(`/ssh?id=${key}`)
++    window.open(`/spug/ssh?id=${key}`)
+   }
+ 
+   const {tag, items, counter} = store
+--- a/spug_web/src/pages/exec/task/Output.js
++++ b/spug_web/src/pages/exec/task/Output.js
+@@ -60,7 +60,7 @@
+ 
+   useEffect(() => {
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/subscribe/${store.token}/?x-token=${X_TOKEN}`);
++    const socket = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/subscribe/${store.token}/?x-token=${X_TOKEN}`);
+     socketRef.current = socket
+     socket.onopen = () => {
+       const message = '\r\x1b[K\x1b[36m### Waiting for scheduling ...\x1b[0m'
+@@ -142,7 +142,7 @@
+   }
+ 
+   function openTerminal() {
+-    window.open(`/ssh?id=${current}`)
++    window.open(`/spug/ssh?id=${current}`)
+   }
+ 
+   const {tag, items, counter} = store
+--- a/spug_web/src/pages/deploy/repository/Console.js
++++ b/spug_web/src/pages/deploy/repository/Console.js
+@@ -76,7 +76,7 @@
+     // through the deploy request's channel instead of the build one
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+     const path = key ? `raw/${key}` : `build/${store.record.id}`;
+-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/${path}/?x-token=${X_TOKEN}`);
++    const socket = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/${path}/?x-token=${X_TOKEN}`);
+     socket.onopen = () => socket.send(String(index));
+     socket.onmessage = e => {
+       if (e.data === 'pong') {
+--- a/spug_web/src/pages/deploy/request/Console.js
++++ b/spug_web/src/pages/deploy/request/Console.js
+@@ -107,7 +107,7 @@
+   function _makeSocket(index = 0) {
+     const token = props.request.id;
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/request/${token}/?x-token=${X_TOKEN}`);
++    const socket = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/request/${token}/?x-token=${X_TOKEN}`);
+     socket.onopen = () => socket.send(String(index));
+     socket.onmessage = e => {
+       if (e.data === 'pong') {
+@@ -148,7 +148,7 @@
+   }
+ 
+   function openTerminal() {
+-    window.open(`/ssh?id=${current}`)
++    window.open(`/spug/ssh?id=${current}`)
+   }
+ 
+   const cItem = outputs[current] || {}
+--- a/spug_web/src/pages/config/setting/index.js
++++ b/spug_web/src/pages/config/setting/index.js
+@@ -50,7 +50,7 @@
+             if (envStore.records.length === 0) {
+               Modal.error({
+                 title: t('无可用环境'),
+-                content: <div>{t('配置依赖应用的运行环境，请在')} <a href="/config/environment">{t('环境管理')}</a> {t('中创建环境。')}</div>
++                content: <div>{t('配置依赖应用的运行环境，请在')} <a href="/spug/config/environment">{t('环境管理')}</a> {t('中创建环境。')}</div>
+               })
+             } else {
+               this.updateEnv()
+--- a/spug_web/src/pages/pipeline/console/Body.js
++++ b/spug_web/src/pages/pipeline/console/Body.js
+@@ -49,7 +49,7 @@
+     if (S.readonly) return;
+     let index = S.wsIndex;
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+-    const socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/pipeline/${S.token}/?x-token=${X_TOKEN}`);
++    const socket = new WebSocket(`${protocol}//${window.location.host}/spug/api/ws/pipeline/${S.token}/?x-token=${X_TOKEN}`);
+     socket.onopen = () => {
+       socket.send(String(index));
+       setWSState('1')
+@@ -109,7 +109,7 @@
+   }
+ 
+   function openTerminal() {
+-    window.open(`/ssh?id=${S.node._host_id}`)
++    window.open(`/spug/ssh?id=${S.node._host_id}`)
+   }
+ 
+   return (
+--- a/spug_web/src/pages/home/Nav.js
++++ b/spug_web/src/pages/home/Nav.js
+@@ -70,7 +70,7 @@
+                 <EditOutlined onClick={() => setRecord(item)}/>
+               ]}>
+                 <Card.Meta
+-                  avatar={<Avatar src={item.logo}/>}
++                  avatar={<Avatar src={item.logo?.startsWith('/resource/') ? `/spug${item.logo}` : item.logo}/>}
+                   title={item.title}
+                   description={item.desc}/>
+                 <CloseOutlined className={styles.icon} onClick={() => handleDelete(item)}/>
+@@ -86,7 +86,7 @@
+                 hoverable
+                 actions={item.links.map(x => <a href={x.url} rel="noopener noreferrer" target="_blank">{x.name}</a>)}>
+                 <Card.Meta
+-                  avatar={<Avatar size="large" src={item.logo}/>}
++                  avatar={<Avatar size="large" src={item.logo?.startsWith('/resource/') ? `/spug${item.logo}` : item.logo}/>}
+                   title={item.title}
+                   description={item.desc}/>
+               </Card>
+--- a/spug_web/src/pages/home/NavForm.js
++++ b/spug_web/src/pages/home/NavForm.js
+@@ -18,7 +18,7 @@
+ 
+   useEffect(() => {
+     if (props.record.logo) {
+-      setFileList([{uid: 0, thumbUrl: props.record.logo}])
++      setFileList([{uid: 0, thumbUrl: props.record.logo.startsWith('/resource/') ? `/spug${props.record.logo}` : props.record.logo}])
+     }
+   }, [props.record])
+ 
+@@ -87,7 +87,7 @@
+             {['gitlab', 'gitee', 'grafana', 'prometheus', 'wiki'].map(item => (
+               <Avatar
+                 key={item}
+-                src={`/resource/${item}.png`}
++                src={`/spug/resource/${item}.png`}
+                 onClick={() => setFileList([{uid: 0, thumbUrl: `/resource/${item}.png`}])}/>
+             ))}
+           </div>
+--- a/spug_web/src/layout/Sider.js
++++ b/spug_web/src/layout/Sider.js
+@@ -5,7 +5,7 @@
+ import routes from '../routes';
+ import logo from './logo-spug-white.png';
+ 
+-let selectedKey = window.location.pathname;
++let selectedKey = history.location.pathname;
+ const OpenKeysMap = {};
+ for (let item of routes) {
+   if (item.child) {
+@@ -45,7 +45,7 @@
+     return menu
+   }
+ 
+-  const tmp = window.location.pathname;
++  const tmp = history.location.pathname;
+   const openKey = OpenKeysMap[tmp];
+   if (openKey) {
+     selectedKey = tmp;
+--- a/spug_web/src/pages/deploy/app/AutoDeploy.js
++++ b/spug_web/src/pages/deploy/app/AutoDeploy.js
+@@ -27,7 +27,7 @@
+   }, [])
+ 
+   useEffect(() => {
+-    const prefix = window.location.origin;
++    const prefix = `${window.location.origin}/spug`;
+     let tmp = `${prefix}/api/apis/deploy/${store.deploy.id}/${type}/`;
+     if (type === 'branch') {
+       tmp += `?name=${branch}`
+--- a/spug_web/public/index.html
++++ b/spug_web/public/index.html
+@@ -9,7 +9,7 @@
+       name="description"
+       content="Web site created using create-react-app"
+     />
+-    <link rel="apple-touch-icon" href="logo.png" />
++    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo.png" />
+     <!--
+       manifest.json provides metadata used when your web app is installed on a
+       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
+--- a/spug_web/src/pages/login/index.js
++++ b/spug_web/src/pages/login/index.js
+@@ -177,6 +177,7 @@
+ 
+       <div className={styles.footerZone}>
+         <div className={styles.linksZone}>
++          <a className={styles.links} href="/spug/opskit-corresponding-source.tar.gz">源码与修改</a>
+           <a className={styles.links} title={t('官网')} href="https://spug.cc" target="_blank"
+              rel="noopener noreferrer">{t('官网')}</a>
+           <a className={styles.links} title="Github" href="https://github.com/openspug/spug" target="_blank"

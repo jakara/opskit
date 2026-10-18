@@ -1,0 +1,1 @@
+import{Mt as e}from"./index-Df5LQUpZ.js";var t=e(`outline`,`dots-vertical`,`DotsVertical`,[[`path`,{d:`M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0`,key:`svg-0`}],[`path`,{d:`M11 19a1 1 0 1 0 2 0a1 1 0 1 0 -2 0`,key:`svg-1`}],[`path`,{d:`M11 5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0`,key:`svg-2`}]]);export{t};

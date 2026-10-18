@@ -1,0 +1,30 @@
+{
+  "npm": {
+    "source_url": "https://codeload.github.com/NginxProxyManager/nginx-proxy-manager/tar.gz/refs/tags/v2.16.0",
+    "archive": "upstream/npm-v2.16.0.tar.gz",
+    "image_index_digest": "sha256:4393e642e233e5efd5adeb7f10918d4aaea71c9ed875b94190273fc8e87f9594",
+    "version": "2.16.0",
+    "revision": "a29eae9d",
+    "mount": "/app/frontend",
+    "license": "MIT",
+    "source_sha256": "8d77f9de056c1807476d2afbe28b5c22ac428c19cc6558194aac8e9aceb3bf25",
+    "patch": "npm-prefix.patch",
+    "patch_sha256": "97a85083729fd7056c072519bddd04330558b481b25980139e9a75f1e21eb2f3",
+    "upstream_index_sha256": "79b89ab25fa1c3b9812b7491f28f5d61b8fbfe1152cec60f7029aa45bd18e653"
+  },
+  "spug": {
+    "source_url": "https://codeload.github.com/openspug/spug/tar.gz/049984e01373fc1cd97b94b60c0b3124036b0f47",
+    "archive": "upstream/spug-049984e.tar.gz",
+    "image_index_digest": "sha256:13fe7c547932e9479dc8181648ec257b91a18e941ef3f2687d9aeb79882de90c",
+    "version": "4.1.1",
+    "revision": "049984e01373fc1cd97b94b60c0b3124036b0f47",
+    "mount": "/opt/spug/spug_web/build",
+    "license": "AGPL-3.0",
+    "source_sha256": "ba4dd6df61896b0d0c4fc961945da4046b715326840815599c7a4e66dac819a2",
+    "patch": "spug-prefix.patch",
+    "patch_sha256": "6ab24eac64d0cbda3185ca029df77b1c54bf585f6c125bb8f3080f58e150ebca",
+    "lock": "spug-package-lock.json",
+    "lock_sha256": "ebe0e4d429b83da920d8616ac6285d28ca6c9f5aa22697da3d3b8331ecdaa11e",
+    "upstream_index_sha256": "18530513a2e10af2e37624ab407a64c0516c5a57fc03309825cce37b04bdd66e"
+  }
+}

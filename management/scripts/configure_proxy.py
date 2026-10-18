@@ -18,12 +18,61 @@ HUB_ROUTE = '''location /hub/ {
 }'''
 
 
+def console_routes(hub_only=False):
+    npm = '''# BEGIN OpsKit 控制台入口
+location = /npm { return 308 /npm/; }
+location ^~ /npm/api/ {
+    # NPM API 使用自身 Bearer 登录，不能让外层 Basic 抢占 Authorization。
+    auth_basic off;
+    if ($http_authorization !~* "^Bearer ") { return 401; }
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header Authorization $http_authorization;
+    proxy_pass http://127.0.0.1:81/api/;
+}
+location ^~ /npm/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header Authorization "";
+    proxy_pass http://127.0.0.1:81/;
+}
+'''
+    public_api = ''.join('''location = /npm/api/%s {
+    auth_basic off;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header Authorization $http_authorization;
+    proxy_pass http://127.0.0.1:81/api/%s;
+}
+''' % (path, path) for path in ('', 'tokens'))
+    spug = '''location = /spug { return 308 /spug/; }
+location ^~ /spug/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Proto $x_forwarded_proto;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Authorization "";
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $http_connection;
+    proxy_read_timeout 3600s;
+    proxy_pass http://spug:80/;
+}
+'''
+    return npm + public_api + ('' if hub_only else spug) + '# END OpsKit 控制台入口\n'
+
+
 def upgrade_workbench(api, entry, reserved_domains=()):
     """迁移本包原始根入口和导航块，保留自定义代理配置。"""
     advanced = entry.get('advanced_config', '')
     pattern = r'location /hub/\s*\{\s*alias /opskit/portal/;\s*index index.html;\s*\}'
     updated, count = re.subn(pattern, lambda _: HUB_ROUTE, advanced, count=1)
     changes = {}
+    owned = '# OpsKit 子路径配置' in advanced or '# OpsKit 本机 Hub' in advanced or count
+    if owned and '# BEGIN OpsKit 控制台入口' not in updated:
+        if re.search(r'location\s+(?:(?:=|\^~)\s+)?/(?:npm|spug)(?:/|\s)', updated):
+            raise RuntimeError('已有自定义 /npm 或 /spug 规则，请先在 NPM 中处理路径冲突；配置未覆盖')
+        updated += '\n' + console_routes('# OpsKit 本机 Hub' in advanced)
+        changes['advanced_config'] = updated
     if count:
         changes['advanced_config'] = updated
     if (entry.get('forward_host'), entry.get('forward_port')) == ('spug', 80) and (
@@ -108,10 +157,11 @@ location ^~ /logs/ {{
     proxy_pass http://victorialogs:9428;
 }}
 '''
+    advanced += console_routes()
     local = v.get('HUB_ONLY') == 'true'
     if local:
         # 仅绑定本机回环地址，与原本地 Hub 保持相同访问范围。
-        advanced = '# OpsKit 本机 Hub\n' + HUB_ROUTE
+        advanced = '# OpsKit 本机 Hub\n' + HUB_ROUTE + '\n' + console_routes(True)
     return {
         'domain_names': list(dict.fromkeys([v['OPS_PUBLIC_HOST'], 'localhost', '127.0.0.1'])),
         'forward_scheme': 'http', 'forward_host': 'workbench', 'forward_port': 8090,

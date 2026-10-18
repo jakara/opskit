@@ -20,6 +20,7 @@ IMAGES = image_defaults({
     'MARIADB_IMAGE': 'm.daocloud.io/docker.io/library/mariadb:10.11',
     'DBX_IMAGE': 'docker.cnb.cool/dbxio.com/dbx:0.6.40',
     'VICTORIALOGS_IMAGE': 'm.daocloud.io/docker.io/victoriametrics/victoria-logs:v1.53.0',
+    'FLUENTBIT_IMAGE': 'm.daocloud.io/docker.io/fluent/fluent-bit:5.1.4',
 })
 PASSWORD_KEYS = ('NPM_ADMIN_PASSWORD', 'SPUG_ADMIN_PASSWORD', 'SPUG_DB_PASSWORD',
                  'DBX_PASSWORD', 'OPS_ADMIN_PASSWORD', 'LOG_AGENT_PASSWORD')
@@ -86,9 +87,9 @@ def configure(existing, reconfigure=False, interactive=True, checkpoint=None, dr
         prompt('OPS_PUBLIC_PORT', '浏览器最终访问端口', v.get('OPS_PUBLIC_PORT', '443' if v['OPS_PUBLIC_SCHEME'] == 'https' else '80'), port)
         prompt('OPSKIT_BIND_IP', '管理机 HTTP 监听 IPv4（外层代理在本机时用 127.0.0.1）', v.get('OPSKIT_BIND_IP', '127.0.0.1'), ipv4)
         prompt('OPSKIT_HTTP_PORT', '管理机 HTTP 端口', v.get('OPSKIT_HTTP_PORT', '80'), port)
-        prompt('NPM_BIND_IP', 'NPM 管理界面监听 IPv4', v.get('NPM_BIND_IP', '127.0.0.1'), ipv4)
-        prompt('NPM_ADMIN_PORT', 'NPM 管理界面端口', v.get('NPM_ADMIN_PORT', '8181'), port)
-        prompt('SPUG_HTTP_PORT', 'Spug 独立 HTTP 端口（不能与前两项端口重复）', v.get('SPUG_HTTP_PORT', '8081'),
+        prompt('NPM_BIND_IP', 'NPM 初始化与恢复端口监听 IPv4', v.get('NPM_BIND_IP', '127.0.0.1'), ipv4)
+        prompt('NPM_ADMIN_PORT', 'NPM 初始化与恢复端口', v.get('NPM_ADMIN_PORT', '8181'), port)
+        prompt('SPUG_HTTP_PORT', 'Spug 恢复端口（常规入口为 /spug/，不能与前两项重复）', v.get('SPUG_HTTP_PORT', '8081'),
                                     lambda s: port(s) and s not in (v['OPSKIT_HTTP_PORT'], v['NPM_ADMIN_PORT']))
         prompt('LOG_INGEST_HOST', '业务机连接管理机的内网 IP 或域名', v.get('LOG_INGEST_HOST', v['OPS_PUBLIC_HOST']), host)
         prompt('LOG_RETENTION_DAYS', '日志保留天数', v.get('LOG_RETENTION_DAYS', '14'), lambda s: s.isdigit() and 1 <= int(s) <= 3650)
@@ -117,12 +118,16 @@ def configure(existing, reconfigure=False, interactive=True, checkpoint=None, dr
             if checkpoint:
                 checkpoint(v)
     for key, image in IMAGES.items():
-        if not existing or reconfigure or draft:
+        if key != 'FLUENTBIT_IMAGE' and (not existing or reconfigure or draft):
             prompt(key, f'{key} 镜像地址（可填私有仓库或官方备用源）', v.get(key, image),
                          lambda s: bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@-]+', s)))
         else:
             v.setdefault(key, image)
     v.setdefault('SPUG_HTTP_PORT', '8081')
+    v.setdefault('OPSKIT_LOG_FORWARD_PORT', '24224')
+    if v.get('HUB_ONLY') != 'true' and (not port(v['OPSKIT_LOG_FORWARD_PORT']) or v['OPSKIT_LOG_FORWARD_PORT'] in (
+            v['OPSKIT_HTTP_PORT'], v['NPM_ADMIN_PORT'], v['SPUG_HTTP_PORT'])):
+        raise ValueError('OPSKIT_LOG_FORWARD_PORT 无效或与访问端口冲突，请配置独立的本机日志接收端口')
     validate(v)
     return v
 
@@ -241,7 +246,7 @@ def install_hub(http_port, configure_only=False, offline=False, reconfigure=Fals
     v = configure(previous, interactive=False)
     if reconfigure:
         http_port = int(ask('Hub HTTP 端口', str(http_port), port))
-        v['NPM_ADMIN_PORT'] = ask('NPM 管理界面端口', v['NPM_ADMIN_PORT'], lambda s: port(s) and s != str(http_port))
+        v['NPM_ADMIN_PORT'] = ask('NPM 初始化与恢复端口', v['NPM_ADMIN_PORT'], lambda s: port(s) and s != str(http_port))
     v.update(HUB_ONLY='true', OPS_PUBLIC_HOST='localhost', OPS_PUBLIC_SCHEME='http',
              OPS_PUBLIC_PORT=str(http_port), OPSKIT_HTTP_PORT=str(http_port),
              OPSKIT_BIND_IP='127.0.0.1', NPM_BIND_IP='127.0.0.1')
@@ -277,13 +282,15 @@ def install_hub(http_port, configure_only=False, offline=False, reconfigure=Fals
             if occupied:
                 raise RuntimeError(f'本机 {value} 端口已被占用，请调整配置或停止占用程序后重跑') from None
     prepare_images(v, config, command, offline)
+    from verify_ui import verify
+    verify(v, hub_only=v.get('HUB_ONLY') == 'true')
     start_discovery()
     run(startup)
     from configure_proxy import initialize
     initialize(v)
     suffix = '' if http_port == 80 else ':' + str(http_port)
     print(f'应用工作台已启动：http://127.0.0.1{suffix}/')
-    print(f'NPM 管理界面：http://127.0.0.1:{v["NPM_ADMIN_PORT"]}；登录信息保存于 {config}')
+    print(f'NPM 管理界面：http://127.0.0.1{suffix}/npm/；登录信息保存于 {config}')
     show_credentials(v, config, hub_only=True)
 
 
@@ -328,14 +335,18 @@ def main():
     run(['docker', 'compose', 'config', '--quiet'])
     startup = compose_start_command(v)
     prepare_images(v, ROOT / '.env', offline=args.offline)
+    from verify_ui import verify
+    verify(v, hub_only=v.get('HUB_ONLY') == 'true')
     start_discovery()
     run(startup)
     from configure_proxy import initialize
     initialize(v)
+    from self_management import initialize as initialize_self
+    initialize_self(v)
     from check import check
     check(v)
     print(f'\n应用工作台已启动：{public_url(v)}/')
-    print(f'NPM 管理界面：http://{v["NPM_BIND_IP"]}:{v["NPM_ADMIN_PORT"]}')
+    print(f'NPM：{public_url(v)}/npm/  Spug：{public_url(v)}/spug/')
     print('外层 Nginx、DNS 与防火墙需由其管理员按生成的示例配置。')
     print('下一步：复制 collector/ 到每台业务机，并只传递 collector.env 作为其 .env。')
     show_credentials(v, ROOT / '.env')

@@ -1,0 +1,304 @@
+--- a/frontend/vite.config.ts
++++ b/frontend/vite.config.ts
+@@ -21,6 +21,7 @@
+ 
+ // https://vitejs.dev/config/
+ export default defineConfig({
++	base: "/npm/",
+ 	plugins: [
+ 		{
+ 			name: 'run-on-start',
+--- a/frontend/src/Router.tsx
++++ b/frontend/src/Router.tsx
+@@ -52,7 +52,7 @@
+ 	}
+ 
+ 	return (
+-		<BrowserRouter>
++		<BrowserRouter basename="/npm/">
+ 			<Page>
+ 				<div>
+ 					<SiteHeader />
+--- a/frontend/src/api/backend/base.ts
++++ b/frontend/src/api/backend/base.ts
+@@ -25,7 +25,7 @@
+ 
+ function buildUrl({ url, params }: BuildUrlArgs) {
+ 	const endpoint = url.replace(/^\/|\/$/g, "");
+-	const baseUrl = `/api/${endpoint}`;
++	const baseUrl = `/npm/api/${endpoint}`;
+ 	const apiUrl = queryString.stringifyUrl({
+ 		url: baseUrl,
+ 		query: decamelizeParams(params),
+--- a/frontend/src/components/Unhealthy.tsx
++++ b/frontend/src/components/Unhealthy.tsx
+@@ -6,7 +6,7 @@
+ 			<div className="container-tight py-4">
+ 				<div className="empty">
+ 					<div className="empty-img">
+-						<img src="/images/unhealthy.svg" alt="" />
++						<img src="/npm/images/unhealthy.svg" alt="" />
+ 					</div>
+ 					<p className="empty-title">The API is not healthy.</p>
+ 					<p className="empty-subtitle text-secondary">We'll keep checking and hope to be back soon!</p>
+--- a/frontend/src/components/SiteHeader.tsx
++++ b/frontend/src/components/SiteHeader.tsx
+@@ -29,7 +29,7 @@
+ 					<NavLink to="/">
+ 						<div className={styles.logo}>
+ 							<img
+-								src="/images/logo-no-text.svg"
++								src="/npm/images/logo-no-text.svg"
+ 								width={40}
+ 								height={40}
+ 								className="navbar-brand-image"
+@@ -51,7 +51,7 @@
+ 					<div className="nav-item d-md-flex">
+ 						<div className="nav-item dropdown">
+ 							<a
+-								href="/"
++								href="/npm/"
+ 								className="nav-link d-flex lh-1"
+ 								data-bs-toggle="dropdown"
+ 								aria-label="Open user menu"
+@@ -59,7 +59,7 @@
+ 								<span
+ 									className="avatar avatar-sm"
+ 									style={{
+-										backgroundImage: `url(${currentUser?.avatar || "/images/default-avatar.jpg"})`,
++										backgroundImage: `url(${currentUser?.avatar || "/npm/images/default-avatar.jpg"})`,
+ 									}}
+ 								/>
+ 								<div className="d-none d-xl-block ps-2">
+--- a/frontend/src/components/Loading.tsx
++++ b/frontend/src/components/Loading.tsx
+@@ -11,7 +11,7 @@
+ 		<div className="empty text-center">
+ 			{noLogo ? null : (
+ 				<div className="mb-3">
+-					<img className={styles.logo} src="/images/logo-no-text.svg" alt="" />
++					<img className={styles.logo} src="/npm/images/logo-no-text.svg" alt="" />
+ 				</div>
+ 			)}
+ 			<div className="text-secondary mb-3">{label || <T id="loading" />}</div>
+--- a/frontend/src/pages/Setup/index.tsx
++++ b/frontend/src/pages/Setup/index.tsx
+@@ -68,7 +68,7 @@
+ 				<div className="text-center mb-4">
+ 					<img
+ 						className={styles.logo}
+-						src="/images/logo-text-horizontal-grey.png"
++						src="/npm/images/logo-text-horizontal-grey.png"
+ 						alt="Nginx Proxy Manager"
+ 					/>
+ 				</div>
+--- a/frontend/src/pages/Login/index.tsx
++++ b/frontend/src/pages/Login/index.tsx
+@@ -184,7 +184,7 @@
+ 				<div className="d-flex justify-content-between align-items-center mb-4 ps-4 pe-3">
+ 					<img
+ 						className={styles.logo}
+-						src="/images/logo-text-horizontal-grey.png"
++						src="/npm/images/logo-text-horizontal-grey.png"
+ 						alt="Nginx Proxy Manager"
+ 					/>
+ 					<div className="d-flex align-items-center gap-1">
+--- a/frontend/src/components/Table/Formatter/GravatarFormatter.tsx
++++ b/frontend/src/components/Table/Formatter/GravatarFormatter.tsx
+@@ -1,4 +1,4 @@
+-const defaultImg = "/images/default-avatar.jpg";
++const defaultImg = "/npm/images/default-avatar.jpg";
+ 
+ interface Props {
+ 	url?: string;
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -5,31 +5,31 @@
+ 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+ 		<title>Nginx Proxy Manager</title>
+ 		<meta name="description" content="Manage Nginx hosts with a simple, powerful interface" />
+-		<link rel="preload" href="/images/logo-no-text.svg" as="image" type="image/svg+xml" fetchPriority="high">
++		<link rel="preload" href="/npm/images/logo-no-text.svg" as="image" type="image/svg+xml" fetchPriority="high">
+ 		<link
+ 			rel="apple-touch-icon"
+ 			sizes="180x180"
+-			href="/images/favicon/apple-touch-icon.png" />
++			href="/npm/images/favicon/apple-touch-icon.png" />
+ 		<link
+ 			rel="icon"
+ 			type="image/png"
+ 			sizes="32x32"
+-			href="/images/favicon/favicon-32x32.png" />
++			href="/npm/images/favicon/favicon-32x32.png" />
+ 		<link
+ 			rel="icon"
+ 			type="image/png"
+ 			sizes="16x16"
+-			href="/images/favicon/favicon-16x16.png" />
+-		<link rel="manifest" href="/images/favicon/site.webmanifest" />
++			href="/npm/images/favicon/favicon-16x16.png" />
++		<link rel="manifest" href="/npm/images/favicon/site.webmanifest" />
+ 		<link
+ 			rel="mask-icon"
+-			href="/images/favicon/safari-pinned-tab.svg"
++			href="/npm/images/favicon/safari-pinned-tab.svg"
+ 			color="#5bbad5" />
+-		<link rel="shortcut icon" href="/images/favicon/favicon.ico" />
++		<link rel="shortcut icon" href="/npm/images/favicon/favicon.ico" />
+ 		<meta name="msapplication-TileColor" content="#4a4a4a" />
+ 		<meta
+ 			name="msapplication-config"
+-			content="/images/favicon/browserconfig.xml" />
++			content="/npm/images/favicon/browserconfig.xml" />
+ 		<meta name="theme-color" content="#ffffff" />
+ 	</head>
+ 	<body>
+--- a/frontend/public/images/favicon/browserconfig.xml
++++ b/frontend/public/images/favicon/browserconfig.xml
+@@ -2,7 +2,7 @@
+ <browserconfig>
+     <msapplication>
+         <tile>
+-            <square150x150logo src="/images/favicons/mstile-150x150.png"/>
++            <square150x150logo src="/npm/images/favicon/mstile-150x150.png"/>
+             <TileColor>#333333</TileColor>
+         </tile>
+     </msapplication>
+--- a/frontend/public/images/favicon/site.webmanifest
++++ b/frontend/public/images/favicon/site.webmanifest
+@@ -3,12 +3,12 @@
+     "short_name": "",
+     "icons": [
+         {
+-            "src": "/images/favicons/android-chrome-192x192.png",
++            "src": "/npm/images/favicon/android-chrome-192x192.png",
+             "sizes": "192x192",
+             "type": "image/png"
+         },
+         {
+-            "src": "/images/favicons/android-chrome-512x512.png",
++            "src": "/npm/images/favicon/android-chrome-512x512.png",
+             "sizes": "512x512",
+             "type": "image/png"
+         }
+--- a/frontend/src/pages/Dashboard/index.tsx
++++ b/frontend/src/pages/Dashboard/index.tsx
+@@ -20,7 +20,7 @@
+ 						<HasPermission section={PROXY_HOSTS} permission={VIEW} hideError>
+ 							<div className="col-sm-6 col-lg-3">
+ 								<a
+-									href="/nginx/proxy"
++									href="/npm/nginx/proxy"
+ 									className="card card-sm card-link card-link-pop"
+ 									onClick={(e) => {
+ 										e.preventDefault();
+@@ -47,7 +47,7 @@
+ 						<HasPermission section={REDIRECTION_HOSTS} permission={VIEW} hideError>
+ 							<div className="col-sm-6 col-lg-3">
+ 								<a
+-									href="/nginx/redirection"
++									href="/npm/nginx/redirection"
+ 									className="card card-sm card-link card-link-pop"
+ 									onClick={(e) => {
+ 										e.preventDefault();
+@@ -75,7 +75,7 @@
+ 						<HasPermission section={STREAMS} permission={VIEW} hideError>
+ 							<div className="col-sm-6 col-lg-3">
+ 								<a
+-									href="/nginx/stream"
++									href="/npm/nginx/stream"
+ 									className="card card-sm card-link card-link-pop"
+ 									onClick={(e) => {
+ 										e.preventDefault();
+@@ -100,7 +100,7 @@
+ 						<HasPermission section={DEAD_HOSTS} permission={VIEW} hideError>
+ 							<div className="col-sm-6 col-lg-3">
+ 								<a
+-									href="/nginx/404"
++									href="/npm/nginx/404"
+ 									className="card card-sm card-link card-link-pop"
+ 									onClick={(e) => {
+ 										e.preventDefault();
+--- a/frontend/src/components/NavLink.tsx
++++ b/frontend/src/components/NavLink.tsx
+@@ -1,4 +1,4 @@
+-import { useNavigate } from "react-router-dom";
++import { useHref, useNavigate } from "react-router-dom";
+ 
+ interface Props {
+ 	children: React.ReactNode;
+@@ -8,11 +8,12 @@
+ }
+ export function NavLink({ children, to, isDropdownItem, onClick }: Props) {
+ 	const navigate = useNavigate();
++	const href = useHref(to || ".");
+ 
+ 	return (
+ 		<a
+ 			className={isDropdownItem ? "dropdown-item" : "nav-link"}
+-			href={to}
++			href={to ? href : undefined}
+ 			onClick={(e) => {
+ 				e.preventDefault();
+ 				if (onClick) {
+--- a/frontend/src/Router.test.tsx
++++ b/frontend/src/Router.test.tsx
+@@ -27,7 +27,7 @@
+ describe("Router", () => {
+ 	beforeEach(() => {
+ 		authState.authenticated = true;
+-		window.history.replaceState(null, "", "/");
++		window.history.replaceState(null, "", "/npm/");
+ 	});
+ 
+ 	afterEach(() => {
+@@ -35,7 +35,7 @@
+ 		vi.restoreAllMocks();
+ 	});
+ 
+-	it.each(["/login", "/login/", "/login?next=/users#form"])(
++	it.each(["/npm/login", "/npm/login/", "/npm/login?next=/users#form"])(
+ 		"redirects an authenticated visit to %s to the dashboard",
+ 		async (path) => {
+ 			window.history.replaceState(null, "", path);
+@@ -43,32 +43,32 @@
+ 			render(<Router />);
+ 
+ 			expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeVisible();
+-			expect(window.location.pathname).toBe("/");
++			expect(window.location.pathname).toBe("/npm/");
+ 			expect(window.location.search).toBe("");
+ 			expect(window.location.hash).toBe("");
+-			expect(replaceState).toHaveBeenCalledWith(expect.anything(), "", "/");
++			expect(replaceState).toHaveBeenCalledWith(expect.anything(), "", "/npm/");
+ 		},
+ 	);
+ 
+ 	it("shows the login form when signed out and redirects after sign-in", async () => {
+ 		authState.authenticated = false;
+-		window.history.replaceState(null, "", "/login");
++		window.history.replaceState(null, "", "/npm/login");
+ 		const { rerender } = render(<Router />);
+ 
+ 		expect(await screen.findByRole("heading", { name: "Login" })).toBeVisible();
+-		expect(window.location.pathname).toBe("/login");
++		expect(window.location.pathname).toBe("/npm/login");
+ 
+ 		authState.authenticated = true;
+ 		rerender(<Router />);
+ 
+ 		expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeVisible();
+-		await waitFor(() => expect(window.location.pathname).toBe("/"));
++		await waitFor(() => expect(window.location.pathname).toBe("/npm/"));
+ 	});
+ 
+ 	it.each([
+-		["/", "Dashboard"],
+-		["/nginx/proxy", "Proxy hosts"],
+-		["/unknown", "Not found"],
++		["/npm/", "Dashboard"],
++		["/npm/nginx/proxy", "Proxy hosts"],
++		["/npm/unknown", "Not found"],
+ 	])("preserves the existing route for %s", async (path, heading) => {
+ 		window.history.replaceState(null, "", path);
+ 		render(<Router />);

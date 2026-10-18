@@ -49,7 +49,7 @@ cd opskit
 
 | 安装范围 | 参数 | 安装内容 | 部署位置 |
 | --- | --- | --- | --- |
-| **完整管理中心** | `management` | Hub、NPM、Spug、MariaDB、DBX、VictoriaLogs | 一台管理机 |
+| **完整管理中心** | `management` | Hub、NPM、Spug、MariaDB、DBX、VictoriaLogs、内部日志采集 | 一台管理机 |
 | **日志采集端** | `collector` | Fluent Bit | 每台业务机 |
 | **精简管理端** | `hub` | Hub + NPM | 本机或只需入口管理的服务器 |
 
@@ -64,12 +64,16 @@ cd opskit
 | 入口 | 默认地址或路径 |
 | --- | --- |
 | **Hub 首页** | `http://127.0.0.1/` |
-| NPM 管理界面 | `http://127.0.0.1:8181/` |
-| Spug | `http://127.0.0.1:8081/` |
+| NPM 管理界面 | `/npm/`，从 Hub 进入 |
+| Spug | `/spug/`，从 Hub 进入 |
 | DBX | `/dbx/`，从 Hub 进入 |
 | 日志查询 | `/logs/select/vmui/`，从 Hub 进入 |
 
 管理中心提供 HTTP，证书由外层 Nginx 管理。**外层代理或采集端在其他机器上时，HTTP 监听地址应填写管理机可达的内网 IPv4**；仅供同机访问的端口可保留 `127.0.0.1`。
+
+完整管理端安装时自动完成内置服务登记：Spug 展示各组件配置、健康监控及每分钟只读巡检；DBX 预置 Spug MariaDB 连接并验证查询；日志中心汇集内置组件的容器输出、NPM 访问日志和 Spug 文件日志。重跑保留人工编辑，初始化结果保存在 `management/.workbench/self-management.json`。
+
+VictoriaLogs 使用 LogsQL，不是关系数据库，因此在日志界面查询，不向 DBX 添加无效的 SQL 连接。DBX 的预置连接默认启用可由管理员解锁的只读防误改。Spug 的内置登记和监控不授予宿主机启停、升级权限。
 
 安装后还需完成三项业务接入：
 
@@ -188,7 +192,7 @@ Windows 使用 `.\uninstall.cmd -DryRun` 预览、`.\uninstall.cmd` 卸载；日
 - **卸载范围：** 可选 `all`（默认）、`hub`、`management`、`collector`。按安装目录和 Compose 标签确认资源归属，保留 Docker、Python、镜像及其他应用；共享资源或无法确认归属时拒绝清理。
 - **完整备份：** Spug SQL 脚本只备份 MariaDB；还需备份配置、工作台、NPM、Spug 文件、DBX 和日志数据等持久卷，并验证恢复。日常停止不要使用会删卷的 `docker compose down -v`。
 - **v0.1 迁移：** 先备份配置与持久卷，停止旧 Compose 的 nginx。旧根目录 `.env` 只读导入并补齐；自定义 Compose 项目名继续通过 `COMPOSE_PROJECT_NAME` 保持一致。原 `agents/` 改为 `collector/`，补齐采集配置后验证日志链路。
-- **入口迁移：** Hub 首页改为 80 端口 `/`，Spug 改为独立 8081；旧 8080 日志接入口保留兼容。安装器备份后迁移原始根代理及收藏，保留自定义规则；外层 Nginx 上游需相应核对。
+- **入口迁移：** Hub 首页使用 80 端口 `/`，NPM、Spug 使用 `/npm/`、`/spug/`；8181/8081 等原端口保留作恢复入口，旧 8080 日志接入口保留兼容。安装器备份后迁移原始根代理及收藏，保留自定义规则；外层 Nginx 上游需相应核对。
 - **旧收藏：** 原 `.workbench/development/` 收藏复制并校验到 `.workbench/hub/`，原目录保留；容器版继续使用既有持久卷。旧 `development`、`production` 命令保留为安装范围别名。
 
 </details>
