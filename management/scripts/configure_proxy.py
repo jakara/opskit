@@ -17,12 +17,50 @@ HUB_ROUTE = '''location /hub/ {
     proxy_pass http://workbench:8090;
 }'''
 
+SESSION_GATE = '''# BEGIN OpsKit 站内登录
+auth_basic off;
+auth_request /_opskit_auth;
+error_page 401 = @opskit_signin;
+location = /_opskit_auth {
+    internal;
+    auth_request off;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Host $http_host;
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header Authorization "";
+    proxy_set_header X-OpsKit-Original-URI $request_uri;
+    proxy_set_header X-OpsKit-Original-Method $request_method;
+    proxy_pass http://workbench:8090/auth/verify;
+}
+location @opskit_signin {
+    auth_request off;
+    rewrite ^ /auth/required break;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Host $http_host;
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header Authorization "";
+    proxy_set_header X-OpsKit-Original-URI $request_uri;
+    proxy_pass http://workbench:8090;
+}
+location ^~ /auth/ {
+    auth_request off;
+    proxy_set_header Host $http_host;
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header Authorization "";
+    proxy_set_header X-OpsKit-Client-IP $remote_addr;
+    proxy_pass http://workbench:8090;
+}
+# END OpsKit 站内登录
+'''
+
 
 def console_routes(hub_only=False):
     npm = '''# BEGIN OpsKit 控制台入口
 location = /npm { return 308 /npm/; }
 location ^~ /npm/api/ {
-    # NPM API 使用自身 Bearer 登录，不能让外层 Basic 抢占 Authorization。
+    # NPM API 同时校验入口会话及自身 Bearer。
     auth_basic off;
     if ($http_authorization !~* "^Bearer ") { return 401; }
     proxy_http_version 1.1;
@@ -50,7 +88,8 @@ location ^~ /spug/ {
     proxy_http_version 1.1;
     proxy_set_header Host $http_host;
     proxy_set_header X-Forwarded-Proto $x_forwarded_proto;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $server_addr;
+    proxy_set_header X-Real-IP $server_addr;
     proxy_set_header Authorization "";
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $http_connection;
@@ -68,7 +107,7 @@ def dynamic_services(advanced):
     return advanced
 
 
-def upgrade_workbench(api, entry, reserved_domains=()):
+def upgrade_workbench(api, entry, reserved_domains=(), operator_id=None):
     """迁移本包原始根入口和导航块，保留自定义代理配置。"""
     advanced = entry.get('advanced_config', '')
     pattern = r'location /hub/\s*\{\s*alias /opskit/portal/;\s*index index.html;\s*\}'
@@ -77,6 +116,13 @@ def upgrade_workbench(api, entry, reserved_domains=()):
     owned = '# OpsKit 子路径配置' in advanced or '# OpsKit 本机 Hub' in advanced or count
     if owned:
         updated = dynamic_services(updated)
+        updated = re.sub(r'# BEGIN OpsKit 站内登录\n.*?# END OpsKit 站内登录\n', lambda _: SESSION_GATE, updated, flags=re.DOTALL)
+        def spug_gateway(match):
+            block = match[0].replace('X-Forwarded-For $proxy_add_x_forwarded_for;', 'X-Forwarded-For $server_addr;')
+            if 'X-Real-IP ' not in block:
+                block = block.replace('proxy_set_header Authorization "";', 'proxy_set_header X-Real-IP $server_addr;\n    proxy_set_header Authorization "";')
+            return block
+        updated = re.sub(r'location \^~ /spug/ \{.*?\n\}', spug_gateway, updated, flags=re.DOTALL)
         if updated != advanced:
             changes['advanced_config'] = updated
     if owned and '# BEGIN OpsKit 控制台入口' not in updated:
@@ -86,6 +132,12 @@ def upgrade_workbench(api, entry, reserved_domains=()):
         changes['advanced_config'] = updated
     if count:
         changes['advanced_config'] = updated
+    if owned and '# BEGIN OpsKit 站内登录' not in updated:
+        if operator_id is not None and entry.get('access_list_id', 0) not in (0, operator_id):
+            raise RuntimeError('已有自定义入口访问列表，请先核对权限策略；未改动代理配置')
+        updated = re.sub(r'^auth_basic "OpsKit(?: 运维访问)?";\n(?:auth_basic_user_file /data/access/\d+;\n)?', '', updated, flags=re.MULTILINE)
+        updated = updated.replace('location ^~ /logs/insert/ {', 'location ^~ /logs/insert/ {\n    auth_request off;')
+        changes.update(advanced_config=SESSION_GATE + updated, access_list_id=0)
     if (entry.get('forward_host'), entry.get('forward_port')) == ('spug', 80) and (
             '# OpsKit 子路径配置' in advanced or count):
         changes.update(forward_host='workbench', forward_port=8090)
@@ -112,10 +164,11 @@ class API:
     def __init__(self, base):
         self.base = base
         self.token = None
+        self.headers = {}
         self.opener = build_opener(ProxyHandler({}))
 
     def call(self, path, data=None, method=None):
-        headers = {'Content-Type': 'application/json'}
+        headers = {'Content-Type': 'application/json', **self.headers}
         if self.token:
             headers['Authorization'] = 'Bearer ' + self.token
         request = Request(self.base + path, headers=headers,
@@ -140,8 +193,7 @@ def proxy_payload(v, operator_id, collector_id):
         proxy_set_header Connection $http_connection;'''
     # 子路径写在 Advanced 中，避开 NPM Custom Locations 模板重置 HTTPS 协议头的问题。
     advanced = f'''# OpsKit 子路径配置；修改后请运行 scripts/check.sh。
-auth_basic "OpsKit 运维访问";
-auth_basic_user_file /data/access/{operator_id};
+{SESSION_GATE}
 client_max_body_size 64m;
 proxy_read_timeout 3600s;
 proxy_send_timeout 3600s;
@@ -155,6 +207,7 @@ location ^~ /dbx/ {{
     proxy_pass http://dbx:4224;
 }}
 location ^~ /logs/insert/ {{
+    auth_request off;
     auth_basic "OpsKit 日志写入";
     auth_basic_user_file /data/access/{collector_id};
     limit_except POST {{ deny all; }}
@@ -173,14 +226,14 @@ location ^~ /logs/ {{
     local = v.get('HUB_ONLY') == 'true'
     if local:
         # 仅绑定本机回环地址，与原本地 Hub 保持相同访问范围。
-        advanced = '# OpsKit 本机 Hub\n' + HUB_ROUTE + '\n' + console_routes(True)
+        advanced = '# OpsKit 本机 Hub\n' + SESSION_GATE + HUB_ROUTE + '\n' + console_routes(True)
     return {
         'domain_names': list(dict.fromkeys([v['OPS_PUBLIC_HOST'], 'localhost', '127.0.0.1'])),
         'forward_scheme': 'http', 'forward_host': 'workbench', 'forward_port': 8090,
         'certificate_id': 0, 'ssl_forced': False, 'caching_enabled': False,
         'block_exploits': False, 'allow_websocket_upgrade': True,
         'http2_support': False, 'hsts_enabled': False, 'hsts_subdomains': False,
-        'trust_forwarded_proto': True, 'access_list_id': 0 if local else operator_id,
+        'trust_forwarded_proto': True, 'access_list_id': 0,
         'advanced_config': advanced, 'locations': [],
         'meta': {},
     }
@@ -226,7 +279,7 @@ def initialize(v):
         print('已创建代理主机及子路径规则，可在 WebUI 编辑。')
     else:
         reserved = {domain for host in hosts if host['id'] != entry['id'] for domain in host['domain_names']}
-        upgrade_workbench(api, entry, reserved)
+        upgrade_workbench(api, entry, reserved, operator_id=ids[0])
         print('已保留 WebUI 中的现有代理主机和访问列表。')
     # 创建响应中的 meta 可能尚未反映配置生成结果，重新读取实际状态。
     entry = api.call('/nginx/proxy-hosts/' + str(entry['id']))

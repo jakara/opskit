@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """通过 DBX 0.6.40 API 预置 Spug 连接与默认只读防护，保留已有连接。"""
-import base64
 from http.cookiejar import CookieJar
 import json
 import sys
@@ -8,7 +7,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, ProxyHandler, Request, build_opener
 
-from common import ROOT, load_env
+from common import ROOT, load_env, operator_headers
 
 CONNECTION_ID = 'opskit-spug'
 CONNECTION_NAME = 'OpsKit · Spug MariaDB'
@@ -26,14 +25,18 @@ class API:
     def __init__(self, v):
         ip = v['OPSKIT_BIND_IP'] if v['OPSKIT_BIND_IP'] != '0.0.0.0' else '127.0.0.1'
         self.base = f'http://{ip}:{v["OPSKIT_HTTP_PORT"]}/dbx/api'
-        credential = base64.b64encode(f'{v["OPS_ADMIN_USER"]}:{v["OPS_ADMIN_PASSWORD"]}'.encode()).decode()
         self.headers = {'Host': v['OPS_PUBLIC_HOST'], 'X-Forwarded-Proto': v['OPS_PUBLIC_SCHEME'],
-                        'Content-Type': 'application/json', 'Authorization': 'Basic ' + credential}
-        self.opener = build_opener(ProxyHandler({}), HTTPCookieProcessor(CookieJar()), NoRedirect())
+                        'Content-Type': 'application/json'}
+        self.session = operator_headers(v)['Cookie']
+        self.jar = CookieJar()
+        self.opener = build_opener(ProxyHandler({}), HTTPCookieProcessor(self.jar), NoRedirect())
 
     def call(self, path, data=None):
         request = Request(self.base + path, headers=self.headers,
                           data=json.dumps(data).encode() if data is not None else None)
+        # 先让 CookieJar 加入 DBX 自身 Cookie，再补入口 Cookie，二者缺一不可。
+        self.jar.add_cookie_header(request)
+        request.add_header('Cookie', '; '.join(filter(None, [request.get_header('Cookie'), self.session])))
         try:
             with self.opener.open(request, timeout=15) as response:
                 result = json.load(response)

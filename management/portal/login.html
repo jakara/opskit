@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>登录 · OpsKit 工作台</title>
+  <link rel="stylesheet" href="/auth/login.css">
+  <script src="/auth/login.js" defer></script>
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <a class="login-brand" href="/" aria-label="OpsKit 工作台"><span class="login-mark" aria-hidden="true"></span>OpsKit<span>应用与运维</span></a>
+    <section class="login-card" aria-labelledby="login-title">
+      <div class="login-eyebrow">欢迎回来</div>
+      <h1 id="login-title">登录工作台</h1>
+      <p class="login-intro">使用 OpsKit 统一入口账号继续访问。</p>
+      <form id="login-form" method="post" action="/auth/api/login" aria-describedby="login-error">
+        <label for="login-username">账号</label>
+        <input id="login-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="128" autofocus>
+        <label for="login-password">密码</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="128">
+        <p id="login-error" class="login-error" role="alert" aria-live="polite"></p>
+        <button id="login-submit" type="submit">登录并继续</button>
+      </form>
+      <noscript><p class="login-error">请启用浏览器 JavaScript 后登录。</p></noscript>
+      <p class="login-help">账号信息见安装完成提示。</p>
+    </section>
+    <p class="login-footer">应用入口 · 运行状态 · 交付文档</p>
+  </main>
+</body>
+</html>

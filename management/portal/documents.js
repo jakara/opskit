@@ -16,6 +16,22 @@ function documentContentURL(path, download = false) {
   if (download) url.searchParams.set('download', '1');
   return url.pathname + url.search;
 }
+$('document-download').addEventListener('click', async (event) => {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  const filename = event.currentTarget.getAttribute('download') || '文档';
+  try {
+    const response = await window.opskitFetch(event.currentTarget.href);
+    if (!response.ok) throw new Error('无法下载文档，请稍后重试');
+    const url = URL.createObjectURL(await response.blob());
+    const download = node('a');
+    download.href = url; download.download = filename;
+    download.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    if (error.name !== 'OpsKitAuthenticationError') toast(error.message);
+  }
+});
 function selectedDocument() { return new URL(location.href).searchParams.get('path') || ''; }
 function documentLink(item, className = '') {
   const element = node('a', 'docs-link ' + className);
@@ -55,6 +71,7 @@ async function loadDocuments() {
     renderDocumentList();
     await routeDocuments();
   } catch (error) {
+    if (error.name === 'OpsKitAuthenticationError') return;
     $('document-shortcuts').replaceChildren(node('p', 'muted', '文档暂时无法读取：' + error.message));
     $('document-content').replaceChildren(node('p', 'notice', error.message));
   } finally { $('documents-refresh').disabled = false; }
@@ -193,18 +210,26 @@ async function openDocument(path) {
   $('document-download').setAttribute('download', path.split('/').pop());
   document.title = item.title + ' · OpsKit 文档';
   try {
-    if (item.kind === 'image') {
-      const image = node('img', 'document-image'); image.alt = item.title; image.src = documentContentURL(path);
-      image.addEventListener('error', () => { if (request === documentRequest) $('document-content').replaceChildren(node('p', 'notice', '图片无法显示，请下载原文件检查。')); });
-      $('document-content').replaceChildren(image); return;
-    }
     if (item.kind === 'legacy-word') {
       $('document-content').replaceChildren(node('p', 'notice', '旧版 .doc 暂不支持在线预览。请下载后用 Word 或 LibreOffice 转为 .docx / PDF，再放入 documents 目录。'));
       return;
     }
-    const response = await fetch(documentContentURL(path), {cache: 'no-store'});
+    const response = await window.opskitFetch(documentContentURL(path));
     if (!response.ok) {
       const error = await response.json(); throw new Error(error.error || '无法读取文档');
+    }
+    if (item.kind === 'image') {
+      const data = await response.blob();
+      const source = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('图片无法读取'));
+        reader.readAsDataURL(data);
+      });
+      if (request !== documentRequest) return;
+      const image = node('img', 'document-image'); image.alt = item.title; image.src = source;
+      image.addEventListener('error', () => { if (request === documentRequest) $('document-content').replaceChildren(node('p', 'notice', '图片无法显示，请下载原文件检查。')); });
+      $('document-content').replaceChildren(image); return;
     }
     if (item.kind === 'pdf') {
       await renderPDF(await response.arrayBuffer(), request);
@@ -224,6 +249,7 @@ async function openDocument(path) {
     $('document-content').replaceChildren(article);
     scrollDocumentAnchor(location.hash);
   } catch (error) {
+    if (error.name === 'OpsKitAuthenticationError') return;
     if (request === documentRequest) $('document-content').replaceChildren(node('p', 'notice', '无法预览此文档：' + error.message + '。可下载原文件查看。'));
   }
 }

@@ -1,21 +1,27 @@
 """隔离 HTTP 服务验证 DBX 播种、双层鉴权、保留人工配置和脱敏失败。"""
-import base64
 import contextlib
 import copy
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
+from pathlib import Path
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
 
-from test_installer import ROOT, module
+from test_installer import ROOT, common, module
 
 dbx = module('dbx_bootstrap', ROOT / 'management/scripts/dbx_bootstrap.py')
+workbench = module('dbx_workbench_auth', ROOT / 'management/portal/server.py')
 
 
 class DBXBootstrapTests(unittest.TestCase):
     def setUp(self):
+        operator_auth = patch.object(dbx, 'operator_headers', return_value={'Cookie': 'opskit_session=fixture'})
+        self.operator_auth = operator_auth.start()
+        self.addCleanup(operator_auth.stop)
         self.values = {'OPSKIT_BIND_IP': '127.0.0.1', 'OPS_PUBLIC_HOST': 'ops.example.internal',
                        'OPS_PUBLIC_SCHEME': 'https', 'OPS_ADMIN_USER': 'operator',
                        'OPS_ADMIN_PASSWORD': 'operator-secret', 'DBX_PASSWORD': 'dbx-secret',
@@ -54,8 +60,11 @@ class DBXBootstrapTests(unittest.TestCase):
                 data = json.loads(body) if body else None
                 path = self.path.removeprefix('/dbx/api')
                 owner.calls.append((self.command, self.path, dict(self.headers), data))
-                expected = 'Basic ' + base64.b64encode(b'operator:operator-secret').decode()
-                if self.headers.get('Host') != owner.values['OPS_PUBLIC_HOST'] or self.headers.get('Authorization') != expected:
+                cookies = SimpleCookie()
+                cookies.load(self.headers.get('Cookie', ''))
+                operator = cookies.get('opskit_session')
+                if (self.headers.get('Host') != owner.values['OPS_PUBLIC_HOST'] or
+                        self.headers.get('Authorization') is not None or not operator or operator.value != 'fixture'):
                     return self.reply({'error': 'bad proxy auth'}, 401)
                 if path == '/auth/check' and owner.not_ready:
                     owner.not_ready -= 1
@@ -68,7 +77,8 @@ class DBXBootstrapTests(unittest.TestCase):
                     if data != {'password': owner.values['DBX_PASSWORD']}:
                         return self.reply({'error': 'bad DBX auth'}, 401)
                     return self.reply({'ok': True}, cookie=True)
-                if self.headers.get('Cookie') != 'dbx_session=fixture':
+                session = cookies.get('dbx_session')
+                if not session or session.value != 'fixture':
                     return self.reply({'error': 'missing DBX cookie'}, 401)
                 if path == '/connection/list':
                     return self.reply(owner.profiles)
@@ -124,6 +134,12 @@ class DBXBootstrapTests(unittest.TestCase):
             self.assertTrue(path.startswith('/dbx/api/'))
             self.assertEqual(headers['X-Forwarded-Proto'], 'https')
             self.assertEqual(headers['Content-Type'], 'application/json')
+            self.assertNotIn('Authorization', headers)
+            cookies = SimpleCookie()
+            cookies.load(headers['Cookie'])
+            self.assertEqual(cookies['opskit_session'].value, 'fixture')
+            if not path.startswith('/dbx/api/auth/'):
+                self.assertEqual(cookies['dbx_session'].value, 'fixture')
             if path.endswith('/connection/test-info') or path.endswith('/connection/connect'):
                 self.assertEqual(data, {'config': profile})
             if path.endswith('/query/execute'):
@@ -250,6 +266,34 @@ class DBXBootstrapTests(unittest.TestCase):
         with contextlib.redirect_stdout(None):
             dbx.initialize(values)
         self.assertEqual(self.profiles[-1]['username'], 'spug')
+
+
+class OperatorHeadersIntegrationTests(unittest.TestCase):
+    def test_real_portal_login_returns_an_opaque_cookie_accepted_by_sessions(self):
+        from auth import configuration
+
+        with tempfile.TemporaryDirectory() as folder, patch.dict(common._operator_sessions, {}, clear=True):
+            root = Path(folder)
+            config = root / 'operator.json'
+            config.write_text(json.dumps(configuration('operator', 'operator-secret', secure=True)))
+            server = workbench.WorkbenchServer(('127.0.0.1', 0), root / 'catalog', auth_file=config)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                values = {'OPSKIT_BIND_IP': '0.0.0.0', 'OPSKIT_HTTP_PORT': str(server.server_port),
+                          'OPS_PUBLIC_HOST': 'localhost', 'OPS_ADMIN_USER': 'operator',
+                          'OPS_ADMIN_PASSWORD': 'operator-secret'}
+                headers = common.operator_headers(values, refresh=True)
+                self.assertEqual(set(headers), {'Cookie'})
+                self.assertRegex(headers['Cookie'], r'^opskit_session=[A-Za-z0-9_-]{43}$')
+                self.assertEqual(server.sessions.read(headers['Cookie'])['user'], 'operator')
+                self.assertEqual(common.operator_headers(values), headers)
+                server.sessions.logout(headers['Cookie'])
+                self.assertIsNone(server.sessions.read(headers['Cookie']))
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=3)
 
 
 if __name__ == '__main__':

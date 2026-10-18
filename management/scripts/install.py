@@ -144,6 +144,8 @@ def public_url(v):
 def show_credentials(v, config, hub_only=False):
     print('\n登录信息（本次安装完成后回显一次，请妥善保存）：')
     print(f'NPM 管理员：{v["NPM_ADMIN_EMAIL"]}  密码：{v["NPM_ADMIN_PASSWORD"]}')
+    if hub_only:
+        print(f'运维入口：{v["OPS_ADMIN_USER"]}  密码：{v["OPS_ADMIN_PASSWORD"]}')
     if not hub_only:
         print(f'Spug 初始管理员：{v["SPUG_ADMIN_USER"]}  密码：{v["SPUG_ADMIN_PASSWORD"]}')
         print(f'DBX 登录密码：{v["DBX_PASSWORD"]}')
@@ -157,6 +159,7 @@ def show_credentials(v, config, hub_only=False):
 
 def write_outputs(v):
     save(ROOT / '.env', env_text(v))
+    write_auth(v)
     connection = {
         'OPS_HOST': v['LOG_INGEST_HOST'], 'OPS_PORT': v['OPSKIT_HTTP_PORT'],
         'OPS_VHOST': v['OPS_PUBLIC_HOST'], 'OPS_SCHEME': 'http',
@@ -166,7 +169,7 @@ def write_outputs(v):
     upstream = v['OPSKIT_BIND_IP'] if v['OPSKIT_BIND_IP'] != '0.0.0.0' else '管理机内网IP'
     save(ROOT / 'outer-nginx.conf.example', f'''# 将以下内容合并到已有 HTTPS server；证书仍由外层 Nginx 管理。
 # 如果外层 Nginx 位于另一台主机或容器，请将 {upstream} 换成可达的管理机地址。
-# 外层需要保留路径、Host、Basic Auth 和 WebSocket；不要在这里添加第二套 Basic Auth。
+# 外层需要保留路径、Host、Cookie 和 WebSocket；不要添加浏览器 Basic Auth。
 location / {{
     proxy_pass http://{upstream}:{v['OPSKIT_HTTP_PORT']};
     proxy_http_version 1.1;
@@ -181,6 +184,24 @@ location / {{
     proxy_buffering off;
 }}
 ''', private=False)
+
+
+def write_auth(v):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'portal'))
+    from auth import configuration
+    name = 'hub-operator.json' if v.get('HUB_ONLY') == 'true' else 'operator.json'
+    path = ROOT / '.workbench/auth' / name
+    previous = json.loads(path.read_text(encoding='utf-8')) if path.exists() else None
+    config = configuration(v['OPS_ADMIN_USER'], v['OPS_ADMIN_PASSWORD'], v['OPS_PUBLIC_SCHEME'] == 'https', previous)
+    identity = str(ROOT.resolve()) + ':' + name + ':' + v['OPS_PUBLIC_HOST'] + ':' + v['OPS_PUBLIC_PORT']
+    config['cookie_name'] = 'opskit_session_' + hashlib.sha256(identity.encode()).hexdigest()[:12]
+    save(path, json.dumps(config, ensure_ascii=False, indent=2) + '\n')
+    components = {'npm': {'identity': v['NPM_ADMIN_EMAIL'], 'secret': v['NPM_ADMIN_PASSWORD']}}
+    if v.get('HUB_ONLY') != 'true':
+        components.update(spug={'username': v['SPUG_ADMIN_USER'], 'password': v['SPUG_ADMIN_PASSWORD']},
+                          dbx={'password': v['DBX_PASSWORD']})
+    component_name = 'hub-components.json' if v.get('HUB_ONLY') == 'true' else 'components.json'
+    save(path.parent / component_name, json.dumps(components, ensure_ascii=False, indent=2) + '\n')
 
 
 def hub_directory():
@@ -271,6 +292,7 @@ def install_hub(http_port, configure_only=False, offline=False, reconfigure=Fals
              OPSKIT_BIND_IP='127.0.0.1', NPM_BIND_IP='127.0.0.1')
     validate(v)
     save(config, env_text(v))
+    write_auth(v)
     directory = hub_directory()
     sys.path.insert(0, str(ROOT / 'portal'))
     from server import Catalog

@@ -2,6 +2,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -33,6 +34,24 @@ class InstallerTests(unittest.TestCase):
     def defaults(self):
         with patch.object(management, 'ask', side_effect=lambda label, default, validator, **kw: str(default)), contextlib.redirect_stdout(io.StringIO()):
             return management.configure({})
+
+    def test_full_and_hub_auth_configs_are_private_stable_and_independent(self):
+        values = self.defaults()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(management, 'ROOT', Path(tmp)), contextlib.redirect_stdout(io.StringIO()):
+            management.write_auth(values)
+            directory = Path(tmp) / '.workbench/auth'
+            full = json.loads((directory / 'operator.json').read_text())
+            self.assertNotIn(values['OPS_ADMIN_PASSWORD'], (directory / 'operator.json').read_text())
+            self.assertEqual(set(json.loads((directory / 'components.json').read_text())), {'npm', 'spug', 'dbx'})
+            management.write_auth(values)
+            self.assertEqual(json.loads((directory / 'operator.json').read_text()), full)
+            management.write_auth(dict(values, HUB_ONLY='true'))
+            hub = json.loads((directory / 'hub-operator.json').read_text())
+            self.assertNotEqual(full['cookie_name'], hub['cookie_name'])
+            self.assertEqual(set(json.loads((directory / 'hub-components.json').read_text())), {'npm'})
+            self.assertEqual(json.loads((directory / 'operator.json').read_text()), full)
+            for path in directory.glob('*.json'):
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_reconfigure_retains_secrets(self):
         first = self.defaults()

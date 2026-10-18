@@ -123,8 +123,10 @@ class InstallerRerunTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()) as output:
             management.show_credentials(values, ROOT / 'management/.workbench/hub.env', hub_only=True)
         self.assertEqual(output.getvalue().count(values['NPM_ADMIN_PASSWORD']), 1)
-        for key in management.PASSWORD_KEYS[1:]:
-            self.assertNotIn(values[key], output.getvalue())
+        self.assertEqual(output.getvalue().count(values['OPS_ADMIN_PASSWORD']), 1)
+        for key in management.PASSWORD_KEYS:
+            if key not in ('NPM_ADMIN_PASSWORD', 'OPS_ADMIN_PASSWORD'):
+                self.assertNotIn(values[key], output.getvalue())
 
 
 class InstallationControlTests(unittest.TestCase):

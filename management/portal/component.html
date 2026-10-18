@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>正在打开应用 · OpsKit</title>
+  <link rel="stylesheet" href="/auth/login.css">
+  <script src="/auth/component.js" defer></script>
+</head>
+<body class="login-page component-page">
+  <main class="login-shell">
+    <a class="login-brand" href="/" aria-label="OpsKit 工作台"><span class="login-mark" aria-hidden="true"></span>OpsKit<span>应用与运维</span></a>
+    <section id="component-panel" class="login-card" aria-labelledby="component-title" aria-busy="true">
+      <div class="login-eyebrow">内置运维工具</div>
+      <h1 id="component-title">正在打开应用</h1>
+      <p id="component-status" class="login-intro" role="status" aria-live="polite">正在建立管理会话，请稍候…</p>
+      <p id="component-error" class="login-error" role="alert" hidden></p>
+      <div id="component-native-actions" class="component-actions" hidden><button id="component-native" type="button">使用组件原生登录</button></div>
+      <div class="component-actions"><button id="component-retry" type="button" hidden>重试</button><a class="component-home" href="/">返回工作台</a></div>
+      <noscript><p class="login-error">请启用浏览器 JavaScript 后打开应用。</p></noscript>
+    </section>
+    <p class="login-footer">OpsKit 统一入口</p>
+  </main>
+</body>
+</html>

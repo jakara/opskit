@@ -24,7 +24,7 @@ function toast(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 3000);
 }
 async function api(path = '/state', options = {}) {
-  const response = await fetch('/hub/api' + path, {cache: 'no-store', ...options});
+  const response = await window.opskitFetch('/hub/api' + path, options);
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || '请求失败，请稍后重试');
   return data;
@@ -43,6 +43,7 @@ async function load() {
     $('updated').textContent = '更新于 ' + new Date(state.updated_at).toLocaleTimeString('zh-CN', {hour12: false});
     render();
   } catch (error) {
+    if (error.name === 'OpsKitAuthenticationError') return;
     $('notice').textContent = '工作台暂时无法加载：' + error.message; $('notice').hidden = false;
   } finally { $('refresh').disabled = false; }
 }

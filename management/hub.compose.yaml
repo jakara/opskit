@@ -10,6 +10,8 @@ services:
     logging: {driver: local, options: {max-size: 10m, max-file: "3"}}
     volumes:
       - ./.workbench/hub:/data
+      - ./.workbench/auth/hub-operator.json:/run/opskit/operator.json:ro
+      - ./.workbench/auth/hub-components.json:/run/opskit/components.json:ro
   proxy-manager:
     extends:
       file: compose.yaml

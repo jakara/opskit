@@ -9,7 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, build_opener, ProxyHandler
 
-from common import ROOT, load_env, run
+from common import ROOT, load_env, operator_headers, run
 
 
 def request(v, path, credential=None, data=None):
@@ -17,8 +17,11 @@ def request(v, path, credential=None, data=None):
     headers = {'Host': v['OPS_PUBLIC_HOST'], 'X-Forwarded-Proto': v['OPS_PUBLIC_SCHEME']}
     if credential:
         user_key, password_key = credential
-        encoded = base64.b64encode(f'{v[user_key]}:{v[password_key]}'.encode()).decode()
-        headers['Authorization'] = 'Basic ' + encoded
+        if user_key == 'OPS_ADMIN_USER':
+            headers.update(operator_headers(v))
+        else:
+            encoded = base64.b64encode(f'{v[user_key]}:{v[password_key]}'.encode()).decode()
+            headers['Authorization'] = 'Basic ' + encoded
     req = Request(f'http://{ip}:{v["OPSKIT_HTTP_PORT"]}{path}', data=data, headers=headers)
     try:
         with build_opener(ProxyHandler({})).open(req, timeout=10) as response:
@@ -82,6 +85,7 @@ def check(v):
     from configure_proxy import API
     target = v['OPSKIT_BIND_IP'] if v['OPSKIT_BIND_IP'] != '0.0.0.0' else '127.0.0.1'
     api = API(f'http://{target}:{v["OPSKIT_HTTP_PORT"]}/npm/api')
+    api.headers = operator_headers(v)
     api.token = api.call('/tokens', {'identity': v['NPM_ADMIN_EMAIL'], 'secret': v['NPM_ADMIN_PASSWORD']})['token']
     if api.call('/users/me').get('email') != v['NPM_ADMIN_EMAIL']:
         raise RuntimeError('NPM 子路径登录与用户查询未通过')

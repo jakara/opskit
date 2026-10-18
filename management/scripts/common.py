@@ -15,6 +15,43 @@ import time
 from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[1]
+_operator_sessions = {}
+
+
+def operator_headers(values, refresh=False):
+    """本机检查直连 HTTP 时显式携带 Secure Cookie，浏览器仍按 HTTPS 策略处理。"""
+    from http.cookies import SimpleCookie
+    from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+    class NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, *args):
+            return None
+    ip = values['OPSKIT_BIND_IP'] if values['OPSKIT_BIND_IP'] != '0.0.0.0' else '127.0.0.1'
+    key = (ip, values['OPSKIT_HTTP_PORT'], values['OPS_PUBLIC_HOST'], values['OPS_ADMIN_USER'],
+           hashlib.sha256(values['OPS_ADMIN_PASSWORD'].encode()).hexdigest())
+    cached = _operator_sessions.get(key)
+    if refresh or not cached or time.monotonic() >= cached[0]:
+        request = Request(f'http://{ip}:{values["OPSKIT_HTTP_PORT"]}/auth/api/login',
+                          data=json.dumps({'username': values['OPS_ADMIN_USER'], 'password': values['OPS_ADMIN_PASSWORD']}).encode(),
+                          headers={'Content-Type': 'application/json', 'Host': values['OPS_PUBLIC_HOST']})
+        try:
+            with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=15) as response:
+                cookie = SimpleCookie()
+                for value in response.headers.get_all('Set-Cookie', []):
+                    cookie.load(value)
+            names = [name for name in cookie if re.fullmatch(r'opskit_session(?:_[a-f0-9]{12})?', name)]
+            if len(names) != 1:
+                raise ValueError('invalid session cookie')
+            cookie_name = names[0]
+            token = cookie[cookie_name].value
+            if not re.fullmatch(r'[A-Za-z0-9_-]{43}', token):
+                raise ValueError('invalid session')
+        except Exception:
+            raise RuntimeError('运维入口登录未通过，请核对入口账户、配置和服务状态') from None
+        if len(_operator_sessions) > 32:
+            _operator_sessions.clear()
+        cached = (time.monotonic() + 600, cookie_name + '=' + token)
+        _operator_sessions[key] = cached
+    return {'Cookie': cached[1]}
 
 
 def image_defaults(defaults):
