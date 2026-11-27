@@ -77,6 +77,34 @@ class PortalAuthTests(unittest.TestCase):
         self.assertEqual(headers['Location'], '/auth/login?next=' + quote(target, safe=''))
         self.assertNotIn('WWW-Authenticate', headers)
 
+    def test_local_profile_requires_both_loopback_bindings_and_a_local_http_origin(self):
+        values = {'OPSKIT_PROFILE': 'local', 'OPSKIT_BIND_IP': '127.0.0.1', 'NPM_BIND_IP': '127.0.0.1',
+                  'OPS_PUBLIC_HOST': 'localhost', 'OPS_PUBLIC_SCHEME': 'http'}
+        self.assertTrue(portal.local_profile(values))
+        for key, value in (('OPSKIT_PROFILE', ''), ('OPSKIT_BIND_IP', '0.0.0.0'), ('NPM_BIND_IP', '0.0.0.0'),
+                           ('OPS_PUBLIC_HOST', 'ops.example'), ('OPS_PUBLIC_SCHEME', 'https')):
+            with self.subTest(key=key):
+                self.assertFalse(portal.local_profile(dict(values, **{key: value})))
+
+    def test_local_profile_skips_login_form_and_issues_a_profile_scoped_session(self):
+        self.server.sessions = auth.Sessions(self.config, self.data, local_login=True)
+        target = '/hub/docs?path=guide.md'
+        status, headers, _ = self.request('GET', target, headers={'Accept': 'text/html'})
+        self.assertEqual(status, 302)
+        login_url = headers['Location']
+        status, headers, body = self.request('GET', login_url, headers={'Host': 'other.example'})
+        self.assertEqual(status, 403)
+        self.assertNotIn('Set-Cookie', headers)
+        status, headers, body = self.request('GET', login_url)
+        self.assertEqual((status, headers['Location'], body), (302, target, b''))
+        cookie = headers['Set-Cookie']
+        self.assertEqual(self.request('GET', target, cookie=cookie)[0], 200)
+        status, _, body = self.request('GET', '/auth/api/session', cookie=cookie)
+        self.assertEqual(status, 200)
+        self.assertIsNone(json.loads(body)['user'])
+        self.server.sessions = auth.Sessions(self.config, self.data)
+        self.assertEqual(self.request('GET', '/auth/api/session', cookie=cookie)[0], 401)
+
     def test_wrong_password_and_collector_account_never_receive_a_session(self):
         for username, password in (('admin', 'wrong-password'), ('collector', self.password)):
             status, headers, body = self.request('POST', '/auth/api/login', {'username': username, 'password': password})

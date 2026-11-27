@@ -66,7 +66,7 @@ def navigation(handler, target, method=None):
 
 
 class Sessions:
-    def __init__(self, configuration_file, directory):
+    def __init__(self, configuration_file, directory, local_login=False):
         path = Path(configuration_file)
         if path.is_symlink():
             raise ValueError('登录配置不能是软链接')
@@ -80,7 +80,9 @@ class Sessions:
                 type(self.config.get('secure')) is not bool or
                 not isinstance(self.cookie_name, str) or not re.fullmatch(r'opskit_session(?:_[a-f0-9]{12})?', self.cookie_name)):
             raise ValueError('登录配置无效，请重跑安装器')
-        self.fingerprint = hashlib.sha256(json.dumps(self.config, sort_keys=True).encode()).hexdigest()
+        self.local_login = local_login and not self.config['secure']
+        fingerprint = json.dumps(self.config, sort_keys=True) + ('\nlocal' if self.local_login else '')
+        self.fingerprint = hashlib.sha256(fingerprint.encode()).hexdigest()
         self.path = Path(directory) / 'sessions.sqlite3'
         if self.path.is_symlink():
             raise ValueError('会话文件不能是软链接')
@@ -134,12 +136,16 @@ class Sessions:
                 self.attempts[peer] = (failures[0] + 1, failures[1])
                 raise PermissionError('用户名或密码不正确')
             self.attempts.pop(peer, None)
-            token = secrets.token_urlsafe(32)
-            with closing(sqlite3.connect(self.path)) as db, db:
-                db.execute('DELETE FROM sessions WHERE expires < ?', (now,))
-                db.execute('INSERT INTO sessions VALUES (?, ?, ?)',
-                           (hashlib.sha256(token.encode()).hexdigest(), now + LIFETIME, self.fingerprint))
-            return self.cookie(token)
+        return self.issue()
+
+    def issue(self):
+        now = time.time()
+        token = secrets.token_urlsafe(32)
+        with self.lock, closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('DELETE FROM sessions WHERE expires < ?', (now,))
+            db.execute('INSERT INTO sessions VALUES (?, ?, ?)',
+                       (hashlib.sha256(token.encode()).hexdigest(), now + LIFETIME, self.fingerprint))
+        return self.cookie(token)
 
     def cookie(self, token=''):
         return f'{self.cookie_name}={token}; Path=/; Max-Age={LIFETIME if token else 0}; HttpOnly; SameSite=Lax' + ('; Secure' if self.config['secure'] else '')

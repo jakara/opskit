@@ -24,6 +24,7 @@ from auth import Sessions, component_target, destination, navigation, required
 from component_auth import ComponentAuth, ComponentAuthError
 
 BUILTIN_IDS = ('spug', 'dbx', 'logs', 'npm')
+LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 DOCUMENT_TYPES = {
     '.md': ('markdown', 'text/plain; charset=utf-8'),
     '.markdown': ('markdown', 'text/plain; charset=utf-8'),
@@ -262,12 +263,13 @@ class Catalog:
 class WorkbenchServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, directory, discovery_file=None, seed_tools=False, documents_dir=None, auth_file=None, component_auth_file=None):
-        self.local_only = address[0] == '127.0.0.1'
+    def __init__(self, address, directory, discovery_file=None, seed_tools=False, documents_dir=None, auth_file=None,
+                 component_auth_file=None, local_login=False):
         self.catalog = Catalog(directory, seed_tools)
         self.discovery = SnapshotDiscovery(discovery_file) if discovery_file else Discovery()
         self.documents = Documents(documents_dir if documents_dir is not None else ASSETS.parent / 'documents')
-        self.sessions = Sessions(auth_file, directory) if auth_file else None
+        self.sessions = Sessions(auth_file, directory, local_login=local_login) if auth_file else None
+        self.local_only = address[0] == '127.0.0.1' or bool(self.sessions and self.sessions.local_login)
         if component_auth_file and not self.sessions:
             raise ValueError('组件代登录必须启用入口认证')
         self.components = ComponentAuth(component_auth_file) if component_auth_file else None
@@ -280,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def allowed(self, mutation=False):
         host = self.headers.get('Host', '')
-        if self.server.local_only and urlsplit('http://' + host).hostname not in ('localhost', '127.0.0.1', '::1'):
+        if self.server.local_only and urlsplit('http://' + host).hostname not in LOOPBACK_HOSTS:
             self.send_json(403, {'error': '当前工作台仅供本机访问'})
             return False
         origin = self.headers.get('Origin')
@@ -341,6 +343,8 @@ class Handler(BaseHTTPRequestHandler):
                     state = state if sessions.consume(cookie_header, component) else None
                 self.send_content(204 if state else 401, b'', 'text/plain')
             else:
+                if state and sessions and sessions.local_login:
+                    state['user'] = None
                 self.send_json(200 if state else 401, state or {'authenticated': False})
         elif path in ('/auth/api/login', '/auth/api/logout', '/auth/api/component-login', '/auth/api/component-native') and self.command == 'POST':
             try:
@@ -394,6 +398,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 name = 'component.html' if path == '/auth/open' else 'component.js'
                 self.send_content(200, (ASSETS / name).read_bytes(), ('text/html' if name.endswith('.html') else 'text/javascript') + '; charset=utf-8')
+        elif self.command == 'GET' and path == '/auth/login' and sessions and sessions.local_login:
+            target = destination(parse_qs(parsed.query).get('next', ['/'])[0])
+            headers = {'Location': quote(target, safe=":/?#[]@!$&'()*+,;=%")}
+            if not sessions.read(cookie_header):
+                headers['Set-Cookie'] = sessions.issue()
+            self.send_content(302, b'', 'text/plain', headers=headers)
         elif self.command == 'GET' and path in ('/auth/login', '/auth/login.js', '/auth/login.css'):
             name = {'/auth/login': 'login.html', '/auth/login.js': 'login.js', '/auth/login.css': 'login.css'}[path]
             content_type = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css'}[name.rsplit('.', 1)[1]]
@@ -503,8 +513,17 @@ class Handler(BaseHTTPRequestHandler):
     do_DELETE = mutate
 
 
-def serve(port, directory, bind='127.0.0.1', discovery_file=None, seed_tools=False, documents_dir=None, auth_file=None, component_auth_file=None):
-    with WorkbenchServer((bind, port), directory, discovery_file, seed_tools, documents_dir, auth_file, component_auth_file) as server:
+def local_profile(values):
+    # These bind addresses also control the published Compose ports.
+    return (values.get('OPSKIT_PROFILE') == 'local' and
+            values.get('OPSKIT_BIND_IP') == values.get('NPM_BIND_IP') == '127.0.0.1' and
+            values.get('OPS_PUBLIC_HOST') in LOOPBACK_HOSTS and values.get('OPS_PUBLIC_SCHEME') == 'http')
+
+
+def serve(port, directory, bind='127.0.0.1', discovery_file=None, seed_tools=False, documents_dir=None, auth_file=None,
+          component_auth_file=None, local_login=False):
+    with WorkbenchServer((bind, port), directory, discovery_file, seed_tools, documents_dir, auth_file, component_auth_file,
+                         local_login=local_login) as server:
         print(f'应用工作台：http://{bind}:{server.server_port}/\n按 Ctrl+C 停止工作台。', flush=True)
         try:
             server.serve_forever()
@@ -527,4 +546,5 @@ if __name__ == '__main__':
         parser.error('端口须为 1～65535')
     if args.bind not in ('127.0.0.1', '::1') and not args.auth_file:
         parser.error('非回环监听必须提供 --auth-file')
-    serve(args.port, args.data, args.bind, args.discovery_file, args.seed_tools, args.documents_dir, args.auth_file, args.component_auth_file)
+    serve(args.port, args.data, args.bind, args.discovery_file, args.seed_tools, args.documents_dir, args.auth_file,
+          args.component_auth_file, local_login=local_profile(os.environ))
